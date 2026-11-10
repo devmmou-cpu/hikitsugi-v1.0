@@ -8,6 +8,7 @@ import { composeStatements, contactEvidenceProblems, loadLibrary, pageDetailProb
 import { retireeContactProblems } from './retiree-check.mjs';
 import { hasCredential } from './transcript.mjs';
 import { phoneShape } from './update.mjs';
+import { locationWarnings } from './coverage-check.mjs';
 
 const MANUAL_SCHEMA = JSON.parse(readFileSync(new URL('../schemas/manual.schema.json', import.meta.url), 'utf8'));
 const CATEGORY = MANUAL_SCHEMA.properties.symptom_pages.items.properties.category;
@@ -57,6 +58,9 @@ const STATEMENTS_BEFORE_COMPOSE = {
 /** 更新で連絡先1件を書く形。ほかの文が変わらないよう、その連絡先の文だけを書く。 */
 export const contactSchema = () => objectOf({ statements: WRITER_STATEMENTS, contact: MANUAL_SCHEMA.properties.contacts.items });
 
+/** 更新で機器1件を書く形。連絡先と同じく、ほかの文が変わらないよう、その機器の文だけを書く。 */
+export const deviceSchema = () => objectOf({ statements: WRITER_STATEMENTS, device: MANUAL_SCHEMA.properties.devices.items });
+
 /** 手順ページのない困りごとへの答えの形。 */
 export const symptomSchema = () => objectOf({
   decisions: {
@@ -72,10 +76,10 @@ export const symptomSchema = () => objectOf({
   },
 });
 
-/** プラグインの Writer が保存する形。part は common、page、contact、symptoms。 */
+/** プラグインの Writer が保存する形。part は common、page、contact、device、symptoms。 */
 export const writerFormat = (part) => {
   if (part === 'symptoms') return { $comment: 'Writer が保存する JSON の形。この項目の名前と値のとおりに保存する', ...symptomSchema() };
-  const schema = part === 'common' ? commonSchema() : part === 'contact' ? contactSchema() : pageSchema();
+  const schema = part === 'common' ? commonSchema() : part === 'contact' ? contactSchema() : part === 'device' ? deviceSchema() : pageSchema();
   return { $comment: 'Writer が保存する JSON の形。この項目の名前と値のとおりに保存する', ...schema, properties: { ...schema.properties, statements: STATEMENTS_BEFORE_COMPOSE } };
 };
 
@@ -137,6 +141,27 @@ export function checkContact(output, id, sources, { library = loadLibrary(), ret
 }
 
 const compactText = (text) => String(text ?? '').normalize('NFKC').replace(/\s+/g, '');
+
+const deviceStatementIds = (device) => [device.name, device.location, device.purpose, device.impact, device.credential_location, device.caution].filter(Boolean);
+
+/**
+ * 更新で書いた機器1件を確かめる。id は対象に固定する。
+ * others は今の機器で、同じ名前の機器を足さないために使う。置き場所に部屋らしい語がないときは warnings に入れる（止めない）。
+ */
+export function checkDevice(output, id, sources, { library = loadLibrary(), retiree, others = [] } = {}) {
+  const device = { ...output.device, id };
+  const { statements, problems } = composeStatements(output.statements, library);
+  const byId = new Map(statements.map((statement) => [statement.id, statement]));
+  const missing = deviceStatementIds(device).filter((ref) => !byId.has(ref));
+  if (missing.length) problems.push(`statements にない文章を参照しています: ${missing.join(', ')}`);
+  problems.push(...statementProblems(statements, retiree));
+  for (const statement of statements) if (hasCredential(statement.text)) problems.push(`${statement.id}: 認証情報の本体を書かないでください。パスワードを置いてある場所だけを書きます`);
+  const name = compactText(byId.get(device.name)?.text);
+  const sameName = others.find((other) => other.id !== id && compactText(other.name) === name);
+  if (name && sameName) problems.push(`${id}: 「${byId.get(device.name).text}」は ${sameName.id} と同じ名前です。今の機器を直すときは「機器を直す」を使ってください`);
+  const warnings = locationWarnings({ statements, devices: [device] }).map(({ device: deviceName }) => `置き場所に部屋の名前がありません（止めません）：${deviceName}`);
+  return { output: { statements, device }, problems, warnings };
+}
 
 /** 載せ漏れの書き直しで、前の版の文章や機器が消えていないかを確かめる。足すだけの書き直しなので、消えていれば問題にする。 */
 export function droppedFromCommon(previous, output) {
@@ -238,6 +263,8 @@ export function previousPiece(manual, owner) {
   const pick = (ids) => [...new Set(ids)].map((id) => byId.get(id));
   const contact = manual.contacts.find((candidate) => candidate.id === owner);
   if (contact) return { statements: pick(contactStatementIds(contact)), contact };
+  const device = manual.devices.find((candidate) => candidate.id === owner);
+  if (device) return { statements: pick(deviceStatementIds(device)), device };
   if (owner === 'common') {
     const { contacts, routines, devices } = manual;
     return { statements: pick(commonStatementIds(manual)), contacts, routines, devices, before_leaving: manual.before_leaving ?? [] };
@@ -250,11 +277,11 @@ export function previousPiece(manual, owner) {
 /**
  * 書き直した部分を、前の版へ差し替える。ほかの部分の文章と ID は変わらない。
  * @param previous 用語の説明を外した前の版
- * @param rewritten { common?, pages: { T1: 出力 }, contacts?: { VEN-01: 出力 } }。前の版にないページは、末尾に足す
+ * @param rewritten { common?, pages: { T1: 出力 }, contacts?: { VEN-01: 出力 }, devices?: { D1: 出力 } }。前の版にないページ、連絡先、機器は、末尾に足す
  */
 export function mergeRewritten(previous, rewritten) {
   const allocate = counter(Math.max(0, ...previous.statements.map((s) => Number(s.id.slice(4)))));
-  const owners = [...(rewritten.common ? ['common'] : []), ...Object.keys(rewritten.pages), ...Object.keys(rewritten.contacts ?? {})];
+  const owners = [...(rewritten.common ? ['common'] : []), ...Object.keys(rewritten.pages), ...Object.keys(rewritten.contacts ?? {}), ...Object.keys(rewritten.devices ?? {})];
   const removed = new Set(owners.flatMap((owner) => previousPiece(previous, owner).statements.map((s) => s.id)));
   const statements = previous.statements.filter((s) => !removed.has(s.id));
   let merged = { ...previous };
@@ -271,6 +298,14 @@ export function mergeRewritten(previous, rewritten) {
     merged = merged.contacts.some((contact) => contact.id === id)
       ? { ...merged, contacts: merged.contacts.map((contact) => (contact.id === id ? placed.rest.contact : contact)) }
       : { ...merged, contacts: [...merged.contacts, placed.rest.contact] };
+  }
+  for (const [id, output] of Object.entries(rewritten.devices ?? {})) {
+    const placed = place(output, (piece) => deviceStatementIds(piece.device), new Set(previousPiece(previous, id).statements.map((s) => s.id)), allocate);
+    statements.push(...placed.statements);
+    // 更新で足す機器は、前の版にないので末尾に足す
+    merged = merged.devices.some((device) => device.id === id)
+      ? { ...merged, devices: merged.devices.map((device) => (device.id === id ? placed.rest.device : device)) }
+      : { ...merged, devices: [...merged.devices, placed.rest.device] };
   }
   const placePage = (output, keep) => {
     const placed = place(output, (piece) => pageStatementIds(piece.page), keep, allocate);

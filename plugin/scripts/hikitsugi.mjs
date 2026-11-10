@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyEdits } from '../lib/apply-edits.mjs';
-import { assembleManual, checkCommon, checkContact, checkPage, droppedFromCommon, mergeRewritten, ownersOf, previousPiece, writerFormat } from '../lib/assemble.mjs';
+import { assembleManual, checkCommon, checkContact, checkDevice, checkPage, droppedFromCommon, mergeRewritten, ownersOf, previousPiece, writerFormat } from '../lib/assemble.mjs';
 import { buildRevision, carryForward, markReviewed, mergeVerification, prepareForRender, summarizeVerification, UnapprovedPartsError, verificationScope } from '../lib/handover.mjs';
 import { coverageLeaks, locationWarnings } from '../lib/coverage-check.mjs';
 import { additionProblems, applySymptomAnswer, basisProblems, symptomGaps } from '../lib/symptom-check.mjs';
@@ -218,22 +218,29 @@ function writerTask(work, [round, part]) {
     }
   } else {
     const { previous_manual: previous, findings } = readJson(join(work, `findings-${Number(round) - 1}.json`));
-    // 連絡先1件の更新では、その連絡先の文の指摘は「共通部分」の持ち物として数えられている
-    const findingsOf = state.update?.contact === part ? 'common' : part;
+    // 連絡先1件と機器1件の更新では、その文の指摘は「共通部分」の持ち物として数えられている
+    const findingsOf = state.update?.contact === part || state.update?.device === part ? 'common' : part;
     // 足す連絡先は、前の版にない。差し戻しの回には前の版に入っているので、ふつうの連絡先と同じに扱う
     const addingContact = state.update?.add_contact?.id === part && !previous.contacts.some((contact) => contact.id === part);
-    const revision = { previous: addingContact ? { statements: [], contact: null } : previousPiece(previous, part), findings: ownersOf(previous, findings).get(findingsOf) ?? [] };
+    const addingDevice = state.update?.add_device?.id === part && !previous.devices.some((device) => device.id === part);
+    const previousOf = addingContact ? { statements: [], contact: null } : addingDevice ? { statements: [], device: null } : previousPiece(previous, part);
+    // 機器1件の指摘は共通部分の持ち物なので、その機器の文の指摘だけを渡す
+    const pieceIds = new Set(previousOf.statements.map((statement) => statement.id));
+    const owned = ownersOf(previous, findings).get(findingsOf) ?? [];
+    const revision = { previous: previousOf, findings: state.update?.device === part ? owned.filter((finding) => pieceIds.has(finding.statement)) : owned };
     if (state.page_fix?.page === part) revision.page_fix = state.page_fix;
     const deadEndFix = state.dead_end_fixes?.[part];
     // 差し戻しの回は、最初の答えのあとに照合の指摘が出ている。指摘を優先するので、定型の文を強制しない
     if (deadEndFix) revision.page_fix = { page: part, comment: Number(round) > state.round_base + 1 ? `${deadEndFix.comment} ただし、findings の指摘があるときは、指摘に従って直してください。` : deadEndFix.comment, evidence: deadEndFix.evidence };
     if (state.leaks && part === 'common') revision.missing = state.leaks;
-    if (state.update) revision.update = { kind: state.update.kind, ...(addedIsNew(state, previous) ? { add_symptom: state.update.add } : {}), ...(addingContact ? { add_contact: state.update.add_contact } : {}) };
+    if (state.update) revision.update = { kind: state.update.kind, ...(addedIsNew(state, previous) ? { add_symptom: state.update.add } : {}), ...(addingContact ? { add_contact: state.update.add_contact } : {}), ...(addingDevice ? { add_device: state.update.add_device } : {}) };
     if (part === 'common') {
       revision.previous.page_plan = planOf(previous);
       task = { part: 'common', revision };
     } else if (state.update?.contact === part) {
       task = { part: 'contact', revision };
+    } else if (state.update?.device === part) {
+      task = { part: 'device', revision };
     } else {
       // 足したページが前の版にあれば（差し戻しの回）、ふつうのページと同じに扱う
       const inPrevious = planOf(previous).find((candidate) => candidate.id === part);
@@ -291,6 +298,11 @@ function checkWriter(work, [round, part]) {
     const adding = state.update.add_contact?.id === part && !previous.contacts.some((contact) => contact.id === part);
     const answer = adding ? sources.transcript.entries.find((entry) => entry.id === state.page_fix?.evidence)?.answer ?? '' : null;
     checked = checkContact(raw, part, sources, { retiree: state.retiree, others: previous.contacts, answer });
+  } else if (state.update?.device === part) {
+    const schemaProblems = validate(writerFormat('device'), raw);
+    if (schemaProblems.length) throw new Problem(`形式が違います（${part}）：\n${schemaProblems.slice(0, 10).join('\n')}`);
+    const text = new Map(previous.statements.map((statement) => [statement.id, statement.text]));
+    checked = checkDevice(raw, part, sources, { retiree: state.retiree, others: previous.devices.map((device) => ({ id: device.id, name: text.get(device.name) })) });
   } else if (part === 'common') {
     // 症状を足すときだけ、新しいページの行を受け取る。ほかの行は前の版のまま
     const addedRow = added ? raw.page_plan?.find((entry) => entry.id === added.id) : null;
@@ -323,16 +335,17 @@ function checkWriter(work, [round, part]) {
   }
   if (checked.problems.length) throw new Problem(`手順部品の指定やページの形に問題があります：\n${checked.problems.join('\n')}`);
   writeJson(path, checked.output);
+  const warnings = checked.warnings?.length ? `\n${checked.warnings.join('\n')}` : '';
   const parts = writerParts(work, state, round);
   const left = parts.filter((name) => name !== part && !isChecked(work, partFile(round, name)));
   if (left.length) {
     markChecked(work, partFile(round, part));
-    return `${part} を確かめました（残り ${left.length} 件）`;
+    return `${part} を確かめました（残り ${left.length} 件）${warnings}`;
   }
   // 最後の部分は、組み立てまで通ってから印を付ける。載せ漏れの書き直しでは、共通部分のファイルは消えている
   const message = assembleRound(work, Number(round));
   if (existsSync(path)) markChecked(work, partFile(round, part));
-  return message;
+  return `${message}${warnings}`;
 }
 
 /** 足すページの行を、一覧の後ろに入れる。すでにある行は足さない。 */
@@ -362,6 +375,7 @@ function assembleRound(work, round) {
   const load = (name) => readJson(join(work, partFile(round, name)));
   const header = { schema_version: 1, company: state.company, company_name: state.company_name, as_of: survey.as_of };
   const contactPart = state.update?.contact;
+  const devicePart = state.update?.device;
   const assembled = round === 1
     ? (() => {
         const common = load('common');
@@ -372,8 +386,9 @@ function assembleRound(work, round) {
         const parts = state.todo ?? [];
         return mergeRewritten(previous, {
           ...(parts.includes('common') ? { common: load('common') } : {}),
-          pages: Object.fromEntries(parts.filter((name) => name !== 'common' && name !== contactPart).map((name) => [name, load(name)])),
+          pages: Object.fromEntries(parts.filter((name) => name !== 'common' && name !== contactPart && name !== devicePart).map((name) => [name, load(name)])),
           ...(contactPart ? { contacts: { [contactPart]: load(contactPart) } } : {}),
+          ...(devicePart && parts.includes(devicePart) ? { devices: { [devicePart]: load(devicePart) } } : {}),
         });
       })();
   // 番号の更新では、文の中に書かれた古い番号も直す。置き忘れると、後任が古い番号へ電話してしまう
@@ -526,7 +541,7 @@ function checkVerification(work, [round]) {
   const revision = buildRevision(fixed, result.findings);
   writeJson(join(work, `findings-${round}.json`), revision);
   if (Number(round) - (state.round_base ?? 0) > MAX_RESENDS) return `${line}\n差し戻しの上限に達しました`;
-  const todo = [...ownersOf(revision.previous_manual, revision.findings).keys()].map((name) => (name === 'common' && state.update?.contact ? state.update.contact : name));
+  const todo = [...ownersOf(revision.previous_manual, revision.findings).keys()].map((name) => (name === 'common' && (state.update?.contact || state.update?.device) ? state.update.contact ?? state.update.device : name));
   // プログラムが組む文の指摘だけが残り、外せる行もないなら、やり直しても同じ文になる。回数を使わずに止める
   const byId = new Map(manual.statements.map((statement) => [statement.id, statement]));
   if (!todo.length && fixed === manual && result.findings.length && result.findings.every((finding) => isComposedStatement(byId.get(finding.statement)))) {
@@ -994,6 +1009,12 @@ function updateAddContact(work, [type], stdin) {
   return beginUpdate(work, { kind: 'add_contact', target: id, title: '新しい連絡先', comment: stdin, question: ADD_CONTACT_QUESTION, todo: [id], extra: { contact: id, add_contact: { id, type } } });
 }
 
+/** 機器を足す。内容は標準入力で受け取る。機器1件だけを Writer に書かせ、ほかの文を変えない。 */
+function updateAddDevice(work, _args, stdin) {
+  const id = nextDeviceId(readJson(join(work, 'manual-final.json')));
+  return beginUpdate(work, { kind: 'add_device', target: id, title: '新しい機器', comment: stdin, question: ADD_DEVICE_QUESTION, todo: [id], extra: { device: id, add_device: { id } } });
+}
+
 /** 差し戻しの上限で止まった更新を取り消し、前の説明書に戻す。 */
 function updateCancel(work) {
   const path = join(work, BEFORE_UPDATE);
@@ -1144,6 +1165,7 @@ const COMMANDS = {
   'update-fix': updateFix,
   'update-add': updateAdd,
   'update-add-contact': updateAddContact,
+  'update-add-device': updateAddDevice,
   'update-cancel': updateCancel,
   'update-memo': updateMemo,
   'memo-next': memoNext,

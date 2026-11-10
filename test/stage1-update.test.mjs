@@ -13,7 +13,7 @@ import { checkCommon, checkContact } from '../plugin/lib/assemble.mjs';
 import { IDENTITY_ENV, machineIdentity, otherAccountsOf } from '../plugin/lib/identity.mjs';
 import { manualProblems, pageStatementIds } from '../plugin/lib/page-check.mjs';
 import { withoutReplies, withReplies } from '../plugin/lib/reply.mjs';
-import { withUpdateMark } from '../plugin/lib/update.mjs';
+import { UPDATE_KIND_LABELS, withUpdateMark } from '../plugin/lib/update.mjs';
 import { validate } from '../plugin/lib/validate.mjs';
 import { PHONE_DIR } from '../plugin/renderer/phone.mjs';
 import { nextStep, run } from '../plugin/scripts/hikitsugi.mjs';
@@ -404,3 +404,83 @@ test('足した連絡先の文が照合で指摘されたら、その連絡先�
     assert.equal(read('state.json').round, before.round);
     assert.equal(nextStep(work).step, 'update');
   }));
+
+// ---- 機器を足す ----
+const UPS_ANSWER = '停電用の予備の電池を事務所の棚の下の段に置きました。停電のときに共有の機器を数分だけ動かします。止まると停電のときに共有の機器がすぐ止まります。パスワードはありません。電池の箱は開けないでください。';
+const UPS_NAME = '停電用の予備の電池';
+
+/** 機器を足す更新を、Writer の出力を書いて検査まで進める。 */
+function writeAddedDevice({ work, hikitsugi, write, read }, { answer = UPS_ANSWER, name = UPS_NAME, location = '事務所の棚の下の段にあります。', extra = [] } = {}) {
+  hikitsugi('update-add-device', [], answer);
+  const { round } = read('state.json');
+  const id = read('state.json').update.target;
+  assert.deepEqual(nextStep(work), { step: 'writer', round, part: id });
+  hikitsugi('writer-task', [String(round), id]);
+  const task = read('writer-task.json');
+  const evidence = task.revision.page_fix.evidence;
+  const statements = [
+    statement('STM-001', name, evidence),
+    statement('STM-002', location, evidence),
+    statement('STM-003', '停電のときに、共有の機器を数分だけ動かします。', evidence),
+    statement('STM-004', '止まると、停電のときに共有の機器がすぐ止まります。', evidence),
+    statement('STM-005', '電池の箱を開けないでください。', evidence),
+    ...extra,
+  ];
+  write(`writer-${round}-${id}.json`, { statements, device: { id, name: 'STM-001', location: 'STM-002', purpose: 'STM-003', impact: 'STM-004', credential_location: null, caution: 'STM-005' } });
+  return { id, task, check: () => hikitsugi('check-writer', [String(round), id]) };
+}
+
+test('機器を足す：機器 1 件だけを書いて照合し、確認のあと「会社のIT」と manual.json に出る。ほかの機器と文は変わらない', () =>
+  finished((tool) => {
+    const { work, hikitsugi, read } = tool;
+    hikitsugi('update-start', ['佐藤']);
+    const before = read('manual-final.json');
+    const { id, task, check } = writeAddedDevice(tool);
+    assert.equal(id, 'D1');
+    assert.equal(task.part, 'device');
+    assert.deepEqual(task.revision.previous, { statements: [], device: null });
+    assert.deepEqual(task.revision.update, { kind: 'add_device', add_device: { id: 'D1' } });
+    assert.equal(read('writer-format.json').properties.device.required.includes('location'), true, '機器 1 件の形を渡す');
+    check();
+    const { scope, shown } = passThrough(tool, id);
+    assert.match(shown, /^D1：停電用の予備の電池/);
+    const after = read('manual-final.json');
+    const added = after.devices.find((device) => device.id === 'D1');
+    for (const ref of [added.name, added.location, added.purpose, added.impact, added.caution]) assert.ok(scope.includes(ref), `${ref} は照合にかける`);
+    keepsStatements(before, after);
+    assert.deepEqual(after.contacts, before.contacts);
+    const html = readFileSync(join(work, 'manual.html'), 'utf8');
+    const company = html.slice(html.indexOf('<section id="tab-company"'), html.indexOf('</section>', html.indexOf('<section id="tab-company"')));
+    assert.ok(company.includes(UPS_NAME) && company.includes('事務所の棚の下の段'), '会社のIT に載る');
+    assert.ok(html.includes('<td class="update-kind">機器の追加</td><td>佐藤</td><td>停電用の予備の電池</td>'), '更新の記録に種類と名前を出す');
+    assert.ok(JSON.parse(readFileSync(join(work, 'manual.json'), 'utf8')).manual.devices.some((device) => device.id === 'D1'));
+    const update = after.updates.at(-1);
+    assert.deepEqual([update.kind, update.target, update.pages, update.by, update.account, update.host], ['add_device', 'D1', [], '佐藤', 'user-a', 'OKJ-PC01']);
+    // 2 台目は D2
+    writeAddedDevice(tool, { name: '2台目の電池', answer: UPS_ANSWER.replace(UPS_NAME, '2台目の電池') }).check();
+    assert.equal(read('state.json').update.target, 'D2');
+  }));
+
+test('機器を足す：置き場所に部屋の名前がなければ警告して止めない。同じ名前とパスワードの本体は止める', () =>
+  finished((tool) => {
+    tool.hikitsugi('update-start', ['佐藤']);
+    const warned = writeAddedDevice(tool, { location: '棚の下の段にあります。' }).check();
+    assert.match(warned, /置き場所に部屋の名前がありません（止めません）：停電用の予備の電池/);
+    tool.hikitsugi('update-cancel');
+    // パスワードの本体らしい答えは、記録の前に断る
+    assert.throws(() => tool.hikitsugi('update-add-device', [], '予備の電池の管理画面のパスワードは abcd1234 です。'), /パスワードの本体/);
+    const { check } = writeAddedDevice(tool, { extra: [statement('STM-006', 'パスワードは abcd1234 です。', 'INT-001')] });
+    assert.throws(check, /認証情報の本体を書かないでください/);
+    tool.hikitsugi('update-cancel');
+    // 足した機器と同じ名前の機器は足せない
+    writeAddedDevice(tool).check();
+    passThrough(tool, 'D1');
+    assert.throws(writeAddedDevice(tool).check, /D1 と同じ名前です/);
+  }));
+
+test('更新の記録の種類名：連絡先と機器は「変更」「追加」でそろえる', () => {
+  assert.deepEqual(
+    Object.fromEntries(['contact', 'add_contact', 'device', 'add_device', 'page', 'add', 'memo'].map((kind) => [kind, UPDATE_KIND_LABELS[kind]])),
+    { contact: '連絡先の変更', add_contact: '連絡先の追加', device: '機器の変更', add_device: '機器の追加', page: '手順の修正', add: '症状の追加', memo: 'メモの取り込み' },
+  );
+});
