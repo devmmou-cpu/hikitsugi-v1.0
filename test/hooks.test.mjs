@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { manualHtmlProblems, writtenHtmlPaths } from '../scripts/hooks/check-manual-html.mjs';
-import { runsGitPush } from '../scripts/hooks/pre-push-test.mjs';
+import { forbiddenPush, runsGitPush } from '../scripts/hooks/pre-push-test.mjs';
 import { renderManual } from '../plugin/renderer/render.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -55,6 +55,32 @@ test('フック：テストが失敗したら git push を止め（終了コー�
     // 関係のないコマンドでは、テストを走らせない
     assert.equal(runPushHook(dir, 'git status').status, 0);
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'exit 0' } }));
+    assert.equal(runPushHook(dir, 'git push origin main').status, 0);
+  });
+});
+
+test('提出したリポジトリへの push と force push を見つけ、origin へのふつうの push は通す', () => {
+  for (const command of ['git push submitted main', 'git push submitted', 'git -C ../hikitsugi push submitted main', 'npm test && git push submitted HEAD:main', 'git push https://github.com/devmmou-cpu/hikitsugi.git main', 'git push git@github.com:devmmou-cpu/hikitsugi.git']) {
+    assert.match(forbiddenPush(command), /submitted/, command);
+  }
+  for (const command of ['git push --force origin main', 'git push -f origin main', 'git push origin main -f', 'git push -uf origin x', 'git push --force-with-lease origin main', 'git push --force-with-lease=main origin main', 'git push origin +main', 'git push origin +HEAD:main', 'git push --mirror origin']) {
+    assert.match(forbiddenPush(command), /force/, command);
+  }
+  for (const command of ['git push', 'git push origin main', 'git push origin submission-20261108', 'git push -u origin post/stage1-update', 'git push https://github.com/devmmou-cpu/hikitsugi-next.git main', 'git status; echo submitted', 'git commit -m "force"', 'git push origin main; echo -f']) {
+    assert.equal(forbiddenPush(command), null, command);
+  }
+});
+
+test('フック：提出したリポジトリへの push と force push は、テストを走らせずに止める（終了コード 2）', () => {
+  withTemp((dir) => {
+    // テストが通る設定でも止まることを確かめる
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'exit 0' } }));
+    const submitted = runPushHook(dir, 'git push submitted main');
+    assert.equal(submitted.status, 2);
+    assert.match(submitted.stderr, /submitted/);
+    const forced = runPushHook(dir, 'git push --force origin main');
+    assert.equal(forced.status, 2);
+    assert.match(forced.stderr, /force push/);
     assert.equal(runPushHook(dir, 'git push origin main').status, 0);
   });
 });
