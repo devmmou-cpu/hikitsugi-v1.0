@@ -331,7 +331,7 @@ test('更新の印：連絡先はそれを使うページに付け、機器は�
 
 test('スキルの案内：update の4択と、更新に Claude Code が要ることがそろっている', () => {
   const skill = readFileSync(join(ROOT, 'plugin/skills/start/SKILL.md'), 'utf8');
-  for (const words of ['「連絡先を直す」「症状を足す」「手順を直す」「後任のメモから取り込む」', 'update-fix', 'update-add', 'update-memo', 'update-cancel', '更新には Claude Code が要ります', 'update-output']) assert.ok(skill.includes(words), words);
+  for (const words of ['「連絡先・機器」「症状を足す」「手順を直す」「後任のメモから取り込む」', '「連絡先を直す」「連絡先を足す」「機器を直す」「機器を足す」', '「業者」と「社内の相談先」', 'update-add-contact', 'update-add-device', 'update-fix', 'update-add', 'update-memo', 'update-cancel', '更新には Claude Code が要ります', 'update-output']) assert.ok(skill.includes(words), words);
   assert.ok(!skill.includes('### done'));
   assert.ok(readFileSync(join(ROOT, 'plugin/agents/writer.md'), 'utf8').includes('task.revision.update'));
 });

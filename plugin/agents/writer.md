@@ -101,7 +101,9 @@ tools: Read, Write
 ## 更新（task.revision.update がある場合）
 完成した取扱説明書を、あとから直します。`page_fix` の `comment` のとおりに直し、`evidence` の ID を根拠にします。古い内容の文は新しい内容に置き換えます。`comment` に関係のない文章と ID は変えません。
 - `task.part` が `contact` のときは、`task.revision.previous` の連絡先1件だけを書きます。`contact` と、その文章だけの `statements` を返します
-- `update.add_symptom` があるとき、共通部分では `page_plan` に `add_symptom.id` の行を足します。`category` と `symptom` を書き、前の版の連絡先、定期作業、機器は変えません
+  - `update.add_contact` があるときは、新しい連絡先を1件書きます。前の版はありません（`previous.contact` は `null`）。`contact.id` は `add_contact.id` のままにします。`name` と `phone` は `page_fix.comment` に書かれたとおりに書き、退職する担当者本人を書きません。`role`、`hours`、`contract_location`、`what_to_tell` は、共通部分の連絡先と同じ決まりで書きます
+- `task.part` が `device` のときは、機器1件だけを書きます。`device` と、その文章だけの `statements` を返します。`update.add_device` があるときは新しい機器で、前の版はありません（`previous.device` は `null`）。`device.id` は `add_device.id` のままにします。共通部分の `devices` と同じ決まりで、`location` には部屋まで書き、`credential_location` にはパスワードを置いてある場所だけを書きます
+- `update.add_symptom` があるとき、共通部分では `page_plan` に `add_symptom.id` の行を足します。`category` と `symptom` を書き、前の版の連絡先、定期作業、機器は変えません。連絡先と機器を足すのは、`task.part` が `contact` と `device` の更新だけです。新しいページの ③ は、`task.contacts` の中から選びます
 
 ## 載せ漏れ（task.revision.missing がある場合）
 `missing` は、聞き取りや調査で答えがあるのに、取扱説明書に載っていない事実です。根拠のとおりに、共通部分の `devices` か `routines` に足します。`credential_location` にはパスワードを置いてある場所、`location` には機器の置き場所、`caution` には大型更新の保留を書きます。ほかの文章と ID は変えません。**足すだけです。前の版の文章、連絡先、定期作業、機器を消さず、全体を返します。**
