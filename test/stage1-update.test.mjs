@@ -173,3 +173,10 @@ test('アカウント名の欄がない前の版の記録とは比べない。�
     assert.doesNotMatch(started, /注意/);
   });
 });
+
+test('サンプルの更新の記録には、OS から読んだアカウント名と PC 名を入れない（作り直すときは環境変数で架空の値を渡す）', () => {
+  const bundle = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8'));
+  for (const update of bundle.manual.updates ?? []) {
+    if (update.account || update.host) assert.equal(update.identity_source, 'env', `${update.date} の記録`);
+  }
+});

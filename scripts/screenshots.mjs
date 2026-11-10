@@ -20,6 +20,10 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compareAndReport } from './compare-shots.mjs';
+import { checkSecretFiles } from './check-secrets.mjs';
+
+// 撮影は更新を実行しないが、プラグインを呼ぶときに実際の名前を残さないよう、架空のアカウント名と PC 名を渡しておく
+process.env.HIKITSUGI_IDENTITY ??= JSON.stringify({ account: 'user-a', host: 'OKJ-PC01' });
 import { CHECKS, COLOR_CHECKS, VIEWPORTS } from './visual-spec-checks.mjs';
 import { phoneFileProblems } from '../plugin/renderer/phone.mjs';
 
@@ -317,6 +321,9 @@ async function main([inputArg, outputArg]) {
   if (!inputArg || !outputArg) throw new Usage('使い方：node scripts/screenshots.mjs <入力.html> <出力フォルダ>');
   const input = resolve(inputArg);
   if (!existsSync(input)) throw new Usage(`入力がありません：${input}`);
+  // 撮った画像の文字は点検できないので、撮る前に入力を点検する。この PC のアカウント名や PC 名、キーの形があれば撮らない
+  const leaks = checkSecretFiles([input]);
+  if (leaks.length) throw new Usage(`入力に秘密情報の形があるので撮りません（値は出しません）：\n${leaks.join('\n')}`);
   const output = resolve(outputArg);
   mkdirSync(output, { recursive: true });
   const chromePath = process.env.CHROME_PATH ?? DEFAULT_CHROME;
