@@ -224,7 +224,7 @@ function passThrough({ work, hikitsugi, write, read }, target) {
 
 /** 業者の連絡先を足す更新を、Writer の出力を書いて検査まで進める。 */
 function writeAddedContact({ work, hikitsugi, write, read }, { answer = EZO_ANSWER, contact = {}, type = 'vendor' } = {}) {
-  hikitsugi('update-add-contact', [type], answer);
+  assert.match(hikitsugi('update-add-contact', [type], answer), /。(VEN|INH)-\d{2} を書きます$/);
   const { round } = read('state.json');
   const id = read('state.json').update.target;
   assert.deepEqual(nextStep(work), { step: 'writer', round, part: id });
@@ -411,7 +411,7 @@ const UPS_NAME = '停電用の予備の電池';
 
 /** 機器を足す更新を、Writer の出力を書いて検査まで進める。 */
 function writeAddedDevice({ work, hikitsugi, write, read }, { answer = UPS_ANSWER, name = UPS_NAME, location = '事務所の棚の下の段にあります。', extra = [] } = {}) {
-  hikitsugi('update-add-device', [], answer);
+  assert.match(hikitsugi('update-add-device', [], answer), /。D\d+ を書きます$/);
   const { round } = read('state.json');
   const id = read('state.json').update.target;
   assert.deepEqual(nextStep(work), { step: 'writer', round, part: id });
@@ -483,4 +483,70 @@ test('更新の記録の種類名：連絡先と機器は「変更」「追加�
     Object.fromEntries(['contact', 'add_contact', 'device', 'add_device', 'page', 'add', 'memo'].map((kind) => [kind, UPDATE_KIND_LABELS[kind]])),
     { contact: '連絡先の変更', add_contact: '連絡先の追加', device: '機器の変更', add_device: '機器の追加', page: '手順の修正', add: '症状の追加', memo: 'メモの取り込み' },
   );
+});
+
+// ---- 合格の条件（docs/design/stage1-update.md の「通ってほしい場面」）を 1 本の流れで確かめる ----
+test('合格の条件：連絡先を足し、その連絡先を ③ にした症状ページを足し、機器を足す。記録に種類、名前、アカウント名、PC 名が並ぶ', () =>
+  finished((tool) => {
+    const { work, hikitsugi, read } = tool;
+    withIdentity({ account: 'user-c', host: 'OKJ-PC09' }, () => {
+      hikitsugi('update-start', ['佐藤']);
+      // 1. エゾクロテン電設を連絡先として足す
+      const contact = writeAddedContact(tool);
+      contact.check();
+      passThrough(tool, contact.id);
+      // 1. 続けて分電盤まわりの症状ページを足し、③ にエゾクロテン電設を使う
+      const { pageId } = writeAddedSymptom(tool, contact.id);
+      passThrough(tool, pageId);
+      // 2. 機器を 1 台足す
+      const device = writeAddedDevice(tool);
+      device.check();
+      passThrough(tool, device.id);
+    });
+    const manual = read('manual-final.json');
+    const bundle = JSON.parse(readFileSync(join(work, 'manual.json'), 'utf8')).manual;
+    const html = readFileSync(join(work, 'manual.html'), 'utf8');
+    const phone = writtenHtml(work);
+    // 1. ③ の連絡先
+    const page = manual.symptom_pages.find((candidate) => manual.statements.find((s) => s.id === candidate.title)?.text === PANEL_TITLE);
+    assert.equal(page.fallback.contact, 'VEN-03');
+    // 2. 会社のIT に載る
+    assert.ok(html.slice(html.indexOf('<section id="tab-company"')).includes(UPS_NAME));
+    // 3. 照合を通った文が、PC 用・スマホ用・manual.json に出る（機器はスマホ用の束にはもともと出さない）
+    for (const text of [EZO.name, PANEL_TITLE]) {
+      assert.ok(html.includes(text), `PC 用：${text}`);
+      assert.ok(phone.includes(text), `スマホ用：${text}`);
+    }
+    assert.ok(bundle.contacts.some((c) => c.name === EZO.name) && bundle.symptom_pages.some((p) => p.id === page.id) && bundle.devices.some((d) => d.id === 'D1'), 'manual.json');
+    // 4. 更新の記録
+    assert.deepEqual(manual.updates.map(({ kind, by, account, host }) => [UPDATE_KIND_LABELS[kind], by, account, host]), [
+      ['連絡先の追加', '佐藤', 'user-c', 'OKJ-PC09'],
+      ['症状の追加', '佐藤', 'user-c', 'OKJ-PC09'],
+      ['機器の追加', '佐藤', 'user-c', 'OKJ-PC09'],
+    ]);
+    assert.deepEqual(bundle.updates, manual.updates, 'manual.json にも同じ記録');
+    for (const value of ['user-c', 'OKJ-PC09']) assert.ok(!html.includes(value) && !phone.includes(value), `${value} は画面に出さない`);
+  }));
+
+test('round の検査：回の番号がおかしい manual.json からは更新を始められず、足す更新の取り消しでも作業フォルダの外を消さない', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hikitsugi-stage1-round-'));
+  try {
+    const bundle = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8'));
+    writeFileSync(join(dir, 'manual.json'), JSON.stringify({ ...bundle, round: '../../x' }));
+    const work = join(dir, 'hikitsugi-work');
+    assert.throws(() => run('update-start', ['佐藤'], { work, stdin: '' }), /回の番号が正しくありません/);
+    assert.ok(!existsSync(work), '何も書かない');
+    // 作り直せなかった作業フォルダでは、足す更新も始まらない
+    mkdirSync(work);
+    assert.throws(() => run('update-add-contact', ['vendor'], { work, stdin: EZO_ANSWER }));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  finished((tool) => {
+    tool.hikitsugi('update-start', ['佐藤']);
+    tool.hikitsugi('update-add-device', [], UPS_ANSWER);
+    const saved = tool.read('before-update.json');
+    tool.write('before-update.json', { ...saved, state: { ...saved.state, round: '../1' } });
+    assert.throws(() => tool.hikitsugi('update-cancel'), /回の番号が正しくありません/);
+  });
 });

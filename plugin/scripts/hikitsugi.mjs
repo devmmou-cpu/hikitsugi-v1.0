@@ -963,7 +963,8 @@ function beginUpdate(work, { kind, target, title, comment, question, todo, extra
     update: { kind, target, by: state.updater, ...(state.updater_identity ? { identity: state.updater_identity } : {}), summary: updateSummary(added.entry.answer), ...(fromMemo(work, target) ? { from_memo: true } : {}), ...extra },
     review: { ...state.review, done: false },
   });
-  return `記録しました（${added.entry.id}）。${target} を書き直します`;
+  // 足す連絡先と機器には前の版がないので「書きます」と伝える
+  return `記録しました（${added.entry.id}）。${target} を${kind === 'add_contact' || kind === 'add_device' ? '書きます' : '書き直します'}`;
 }
 
 /** 手順ページ、連絡先、機器を直す。内容は標準入力で受け取る。 */
