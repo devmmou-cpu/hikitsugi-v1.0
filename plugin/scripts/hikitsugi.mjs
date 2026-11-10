@@ -30,7 +30,7 @@ import { PHONE_DIR, writePhoneBundle } from '../renderer/phone.mjs';
 const PC_NAME = '「ITの取扱説明書（PC 用）manual.html」';
 const PHONE_NAME = `「${PHONE_DIR}」フォルダ`;
 import { oversizeMessage, PC_FILE_LIMIT, PC_FILE_TARGET, writeWithinLimit } from '../lib/limits.mjs';
-import { BUNDLE_NAME, bundleOf, changeSummary, pagesNeedingPhrases, pagesOfContact, parseMemos, targetKind, UPDATE_KIND_LABELS, updateSummary, withContactPhone, withUpdateMark } from '../lib/update.mjs';
+import { BUNDLE_NAME, bundleOf, changeSummary, nextContactId, nextDeviceId, pagesNeedingPhrases, pagesOfContact, parseMemos, phoneShape, targetKind, UPDATE_KIND_LABELS, updateSummary, withContactPhone, withUpdateMark } from '../lib/update.mjs';
 import { machineIdentity, otherAccountsOf } from '../lib/identity.mjs';
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -220,13 +220,15 @@ function writerTask(work, [round, part]) {
     const { previous_manual: previous, findings } = readJson(join(work, `findings-${Number(round) - 1}.json`));
     // 連絡先1件の更新では、その連絡先の文の指摘は「共通部分」の持ち物として数えられている
     const findingsOf = state.update?.contact === part ? 'common' : part;
-    const revision = { previous: previousPiece(previous, part), findings: ownersOf(previous, findings).get(findingsOf) ?? [] };
+    // 足す連絡先は、前の版にない。差し戻しの回には前の版に入っているので、ふつうの連絡先と同じに扱う
+    const addingContact = state.update?.add_contact?.id === part && !previous.contacts.some((contact) => contact.id === part);
+    const revision = { previous: addingContact ? { statements: [], contact: null } : previousPiece(previous, part), findings: ownersOf(previous, findings).get(findingsOf) ?? [] };
     if (state.page_fix?.page === part) revision.page_fix = state.page_fix;
     const deadEndFix = state.dead_end_fixes?.[part];
     // 差し戻しの回は、最初の答えのあとに照合の指摘が出ている。指摘を優先するので、定型の文を強制しない
     if (deadEndFix) revision.page_fix = { page: part, comment: Number(round) > state.round_base + 1 ? `${deadEndFix.comment} ただし、findings の指摘があるときは、指摘に従って直してください。` : deadEndFix.comment, evidence: deadEndFix.evidence };
     if (state.leaks && part === 'common') revision.missing = state.leaks;
-    if (state.update) revision.update = { kind: state.update.kind, ...(addedIsNew(state, previous) ? { add_symptom: state.update.add } : {}) };
+    if (state.update) revision.update = { kind: state.update.kind, ...(addedIsNew(state, previous) ? { add_symptom: state.update.add } : {}), ...(addingContact ? { add_contact: state.update.add_contact } : {}) };
     if (part === 'common') {
       revision.previous.page_plan = planOf(previous);
       task = { part: 'common', revision };
@@ -286,7 +288,9 @@ function checkWriter(work, [round, part]) {
   if (state.update?.contact === part) {
     const schemaProblems = validate(writerFormat('contact'), raw);
     if (schemaProblems.length) throw new Problem(`形式が違います（${part}）：\n${schemaProblems.slice(0, 10).join('\n')}`);
-    checked = checkContact(raw, part, sources, { retiree: state.retiree });
+    const adding = state.update.add_contact?.id === part && !previous.contacts.some((contact) => contact.id === part);
+    const answer = adding ? sources.transcript.entries.find((entry) => entry.id === state.page_fix?.evidence)?.answer ?? '' : null;
+    checked = checkContact(raw, part, sources, { retiree: state.retiree, others: previous.contacts, answer });
   } else if (part === 'common') {
     // 症状を足すときだけ、新しいページの行を受け取る。ほかの行は前の版のまま
     const addedRow = added ? raw.page_plan?.find((entry) => entry.id === added.id) : null;
@@ -373,7 +377,9 @@ function assembleRound(work, round) {
         });
       })();
   // 番号の更新では、文の中に書かれた古い番号も直す。置き忘れると、後任が古い番号へ電話してしまう
-  const withNewPhone = (target) => (contactPart && round > 1 ? withContactPhone(target, contactPart, readJson(join(work, `findings-${round - 1}.json`)).previous_manual.contacts.find((contact) => contact.id === contactPart).phone, load(contactPart).contact.phone, state.page_fix?.evidence) : target);
+  // 足した連絡先には古い番号がないので、置き換えない
+  const oldContact = contactPart && round > 1 ? readJson(join(work, `findings-${round - 1}.json`)).previous_manual.contacts.find((contact) => contact.id === contactPart) : null;
+  const withNewPhone = (target) => (oldContact ? withContactPhone(target, contactPart, oldContact.phone, load(contactPart).contact.phone, state.page_fix?.evidence) : target);
   const { manual: composed, problems } = composeProcedures(withNewPhone(assembled), sources, { retiree: state.retiree });
   if (problems.length) throw new Problem(`手順部品の指定やページの形に問題があります：\n${problems.join('\n')}`);
   const manual = state.symptom_exclusions?.length ? { ...composed, symptom_exclusions: state.symptom_exclusions } : composed;
@@ -593,6 +599,7 @@ function reviewShow(work, [pageId]) {
       `${pageId}：${name}`,
       ...textsOf(manual, [role]),
       `電話番号：${phone || '記録がありません'}`,
+      ...(phoneShape(phone) === 'unusual' ? ['確認：見慣れない形の番号です（フリーダイヤル、携帯、内線つきなど）。この番号でよいですか。違っていれば「直す」を選んでください'] : []),
       ...section2(manual, '受付時間や連絡の手段', hours),
       ...section2(manual, '契約番号の控えの場所', place),
       ...section2(manual, '伝えること', tell),
@@ -972,6 +979,21 @@ function updateAdd(work, _args, stdin) {
   return beginUpdate(work, { kind: 'add', target: id, title: symptom, comment: symptom, question: '手順ページを足します。症状と、そのときの対応を教えてください。', todo: ['common', id], extra: { add: { id, symptom } } });
 }
 
+export const ADD_CONTACT_QUESTION = '連絡先を足します。足す連絡先の、名前、電話番号、何の相手か、受付の時間や連絡の手段、契約書の控えの場所を教えてください。分からないものは「分からない」と書いてください。';
+export const ADD_DEVICE_QUESTION = '機器を足します。足す機器の、名前、置き場所（部屋と、部屋の中の目印）、何に使うか、止まると何が困るか、パスワードを置いてある場所、してはいけないことを教えてください。分からないものは「分からない」と書いてください。';
+
+/** 連絡先を足す。業者か社内の相談先かは本人が選び、ID の頭はプログラムが決める。内容は標準入力で受け取る。 */
+function updateAddContact(work, [type], stdin) {
+  if (!['vendor', 'internal'].includes(type)) throw new UsageError('使い方：update-add-contact <vendor|internal>（内容は標準入力。vendor は業者、internal は社内の相談先）');
+  let id;
+  try {
+    id = nextContactId(readJson(join(work, 'manual-final.json')), type);
+  } catch (error) {
+    throw new Problem(error.message);
+  }
+  return beginUpdate(work, { kind: 'add_contact', target: id, title: '新しい連絡先', comment: stdin, question: ADD_CONTACT_QUESTION, todo: [id], extra: { contact: id, add_contact: { id, type } } });
+}
+
 /** 差し戻しの上限で止まった更新を取り消し、前の説明書に戻す。 */
 function updateCancel(work) {
   const path = join(work, BEFORE_UPDATE);
@@ -1121,6 +1143,7 @@ const COMMANDS = {
   'update-targets': updateTargets,
   'update-fix': updateFix,
   'update-add': updateAdd,
+  'update-add-contact': updateAddContact,
   'update-cancel': updateCancel,
   'update-memo': updateMemo,
   'memo-next': memoNext,
@@ -1138,7 +1161,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const [command, ...args] = process.argv.slice(2);
   const work = resolve(process.env.HIKITSUGI_WORK ?? 'hikitsugi-work');
   try {
-    const stdin = ['record', 'review-fix', 'dead-end-answer', 'update-fix', 'update-add', 'update-memo'].includes(command) ? readFileSync(0, 'utf8') : '';
+    const stdin = ['record', 'review-fix', 'dead-end-answer', 'update-fix', 'update-add', 'update-add-contact', 'update-add-device', 'update-memo'].includes(command) ? readFileSync(0, 'utf8') : '';
     console.log(run(command, args, { work, stdin }));
   } catch (error) {
     if (error instanceof Problem) {

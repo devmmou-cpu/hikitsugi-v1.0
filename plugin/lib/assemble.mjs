@@ -7,6 +7,7 @@ import { contactProblems, pageProblems, pageStatementIds, statementProblems, rea
 import { composeStatements, contactEvidenceProblems, loadLibrary, pageDetailProblems, stepSourceProblems } from './procedures.mjs';
 import { retireeContactProblems } from './retiree-check.mjs';
 import { hasCredential } from './transcript.mjs';
+import { phoneShape } from './update.mjs';
 
 const MANUAL_SCHEMA = JSON.parse(readFileSync(new URL('../schemas/manual.schema.json', import.meta.url), 'utf8'));
 const CATEGORY = MANUAL_SCHEMA.properties.symptom_pages.items.properties.category;
@@ -115,7 +116,7 @@ export function checkCommon(output, sources, { library = loadLibrary(), retiree 
 const contactStatementIds = (contact) => [contact.role, contact.hours, contact.contract_location, contact.what_to_tell].filter(Boolean);
 
 /** 更新で書いた連絡先1件を確かめる。id は対象に固定する。 */
-export function checkContact(output, id, sources, { library = loadLibrary(), retiree } = {}) {
+export function checkContact(output, id, sources, { library = loadLibrary(), retiree, others = [], answer = null } = {}) {
   const contact = { ...output.contact, id };
   const { statements, problems } = composeStatements(output.statements, library);
   const known = new Set(statements.map((statement) => statement.id));
@@ -123,8 +124,19 @@ export function checkContact(output, id, sources, { library = loadLibrary(), ret
   if (missing.length) problems.push(`statements にない文章を参照しています: ${missing.join(', ')}`);
   const piece = { statements, contacts: [contact] };
   problems.push(...statementProblems(statements, retiree), ...contactProblems(piece), ...retireeContactProblems([contact], retiree), ...contactEvidenceProblems([contact], sources));
+  // 足すときと直すときだけの検査。最初に作るときの検査は、評価の条件なので変えない
+  if (phoneShape(contact.phone) === 'invalid') problems.push(`${id}: 電話番号「${contact.phone}」は番号の形ではありません。番号の記録がなければ空文字にしてください`);
+  const sameName = others.find((other) => other.id !== id && compactText(other.name) === compactText(contact.name));
+  if (sameName) problems.push(`${id}: 「${contact.name}」は ${sameName.id} と同じ名前です。今の連絡先を直すときは「連絡先を直す」を使ってください`);
+  // 足す連絡先は、更新する人の今回の答えから来ていること
+  if (answer !== null) {
+    if (!compactText(answer).includes(compactText(contact.name))) problems.push(`${id}: 名前「${contact.name}」が今回の答えにありません。答えのとおりに書いてください`);
+    if (contact.phone && !compactText(answer).includes(compactText(contact.phone))) problems.push(`${id}: 電話番号が今回の答えにありません。答えのとおりに書いてください`);
+  }
   return { output: { statements, contact }, problems };
 }
+
+const compactText = (text) => String(text ?? '').normalize('NFKC').replace(/\s+/g, '');
 
 /** 載せ漏れの書き直しで、前の版の文章や機器が消えていないかを確かめる。足すだけの書き直しなので、消えていれば問題にする。 */
 export function droppedFromCommon(previous, output) {
@@ -255,7 +267,10 @@ export function mergeRewritten(previous, rewritten) {
   for (const [id, output] of Object.entries(rewritten.contacts ?? {})) {
     const placed = place(output, (piece) => contactStatementIds(piece.contact), new Set(previousPiece(previous, id).statements.map((s) => s.id)), allocate);
     statements.push(...placed.statements);
-    merged = { ...merged, contacts: merged.contacts.map((contact) => (contact.id === id ? placed.rest.contact : contact)) };
+    // 更新で足す連絡先は、前の版にないので末尾に足す
+    merged = merged.contacts.some((contact) => contact.id === id)
+      ? { ...merged, contacts: merged.contacts.map((contact) => (contact.id === id ? placed.rest.contact : contact)) }
+      : { ...merged, contacts: [...merged.contacts, placed.rest.contact] };
   }
   const placePage = (output, keep) => {
     const placed = place(output, (piece) => pageStatementIds(piece.page), keep, allocate);

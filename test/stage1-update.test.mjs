@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { loadInput } from '../eval/lib/load-set.mjs';
 import { checkCommon, checkContact } from '../plugin/lib/assemble.mjs';
 import { IDENTITY_ENV, machineIdentity, otherAccountsOf } from '../plugin/lib/identity.mjs';
-import { manualProblems } from '../plugin/lib/page-check.mjs';
+import { manualProblems, pageStatementIds } from '../plugin/lib/page-check.mjs';
 import { withoutReplies, withReplies } from '../plugin/lib/reply.mjs';
 import { withUpdateMark } from '../plugin/lib/update.mjs';
 import { validate } from '../plugin/lib/validate.mjs';
@@ -180,3 +180,227 @@ test('サンプルの更新の記録には、OS から読んだアカウント�
     if (update.account || update.host) assert.equal(update.identity_source, 'env', `${update.date} の記録`);
   }
 });
+
+/**
+ * 前の版の文が残っていることを確かめる。用語の説明の文は、新しい文と番号が重なると振り直す決まり（handover.mjs の carryForward）なので、
+ * 文面が残っていることだけを見る。ほかの文は ID と文面が同じこと。プログラムが組む文（usage 付き）は作り直すので見ない。
+ */
+function keepsStatements(before, after) {
+  const glossary = new Set(before.glossary.map((entry) => entry.company));
+  for (const old of before.statements.filter((s) => !s.usage)) {
+    if (glossary.has(old.id)) assert.ok(after.statements.some((s) => s.text === old.text), `用語の説明 ${old.id} が残る`);
+    else assert.equal(after.statements.find((s) => s.id === old.id)?.text, old.text, old.id);
+  }
+}
+
+// ---- 連絡先を足す ----
+const EZO = { name: 'エゾクロテン電設', phone: '03-0000-0131' };
+const EZO_ANSWER = `分電盤やブレーカーの工事は${EZO.name}に頼みます。電話番号は ${EZO.phone} で、受付は平日の9時から17時です。契約書の控えの場所は分かりません。`;
+const statement = (id, text, evidence) => ({ id, text, evidence: [evidence], library: null });
+const phrasesOf = (id) => Array.from({ length: 15 }, (_, i) => `${id} の言い方 ${i}`);
+
+/** 書き終えたあと、照合（全部正しい）、言い方、更新する人の確認、作り直しまで進める。Editor は直さない。 */
+function passThrough({ work, hikitsugi, write, read }, target) {
+  const round = String(read('state.json').round);
+  if (nextStep(work).step === 'editor') {
+    write(`editor-${round}.json`, { rewrites: [], glossary: [] });
+    hikitsugi('merge-edits', [round]);
+  }
+  assert.deepEqual(nextStep(work), { step: 'verifier', round: Number(round) });
+  const scope = read(`verify-scope-${round}.json`).statements;
+  write(`verification-${round}.json`, allCorrect(scope));
+  assert.match(hikitsugi('check-verification', [round]), /合格/);
+  if (nextStep(work).step === 'phrases') {
+    hikitsugi('phrase-task');
+    write('phrases.json', { pages: read('phrase-pages.json').pages.map((page) => ({ id: page.id, phrases: phrasesOf(page.id) })) });
+    hikitsugi('check-phrases');
+  }
+  assert.deepEqual(nextStep(work), { step: 'review', reviewer: read('state.json').update.by, page: target, pages: 1, update: true });
+  const shown = hikitsugi('review-show', [target]);
+  hikitsugi('review-ok', [target]);
+  hikitsugi('render');
+  return { scope, shown };
+}
+
+/** 業者の連絡先を足す更新を、Writer の出力を書いて検査まで進める。 */
+function writeAddedContact({ work, hikitsugi, write, read }, { answer = EZO_ANSWER, contact = {}, type = 'vendor' } = {}) {
+  hikitsugi('update-add-contact', [type], answer);
+  const { round } = read('state.json');
+  const id = read('state.json').update.target;
+  assert.deepEqual(nextStep(work), { step: 'writer', round, part: id });
+  hikitsugi('writer-task', [String(round), id]);
+  const task = read('writer-task.json');
+  const evidence = task.revision.page_fix.evidence;
+  const statements = [
+    statement('STM-001', '分電盤の工事の会社', evidence),
+    statement('STM-002', '受付は平日の9時から17時です。', evidence),
+    statement('STM-003', '記録がありません。', evidence),
+    statement('STM-004', '分電盤のどこが落ちたかを伝えてください。', evidence),
+  ];
+  write(`writer-${round}-${id}.json`, { statements, contact: { id, ...EZO, role: 'STM-001', hours: 'STM-002', contract_location: 'STM-003', what_to_tell: 'STM-004', ...contact } });
+  return { id, round, task, check: () => hikitsugi('check-writer', [String(round), id]) };
+}
+
+test('連絡先を足す：業者の続きの ID で、答えのとおりの名前と番号を載せ、文を照合し、確認のあと PC 用・スマホ用・manual.json に出す', () =>
+  finished((tool) => {
+    const { work, hikitsugi, read } = tool;
+    hikitsugi('update-start', ['佐藤']);
+    const before = read('manual-final.json');
+    const { id, task, check } = writeAddedContact(tool);
+    assert.equal(id, 'VEN-03', '今ある VEN-02 の続き');
+    assert.equal(task.part, 'contact');
+    assert.deepEqual(task.revision.previous, { statements: [], contact: null });
+    assert.deepEqual(task.revision.update, { kind: 'add_contact', add_contact: { id: 'VEN-03', type: 'vendor' } });
+    assert.equal(read('transcript.json').entries.at(-1).answer, EZO_ANSWER, '更新する人の答えを聞き取りの記録にする');
+    check();
+    const { scope } = passThrough(tool, id);
+    const after = read('manual-final.json');
+    const added = after.contacts.find((contact) => contact.id === 'VEN-03');
+    assert.deepEqual([added.name, added.phone], [EZO.name, EZO.phone]);
+    for (const ref of [added.role, added.hours, added.contract_location, added.what_to_tell]) assert.ok(scope.includes(ref), `${ref} は照合にかける`);
+    // 前の版の文と連絡先は変わらない
+    keepsStatements(before, after);
+    assert.deepEqual(after.contacts.filter((contact) => contact.id !== 'VEN-03'), before.contacts);
+    const update = after.updates.at(-1);
+    assert.deepEqual([update.kind, update.target, update.pages, update.by], ['add_contact', 'VEN-03', [], '佐藤']);
+    // PC 用、スマホ用（00_連絡先）、manual.json
+    const html = readFileSync(join(work, 'manual.html'), 'utf8');
+    assert.ok(html.includes(EZO.name));
+    assert.ok(html.includes('<td class="update-kind">連絡先の追加</td><td>佐藤</td><td>エゾクロテン電設</td>'), '更新の記録の表に種類と名前を出す');
+    const contactsFile = readdirSync(join(work, PHONE_DIR)).find((name) => name.startsWith('00'));
+    assert.ok(readFileSync(join(work, PHONE_DIR, contactsFile), 'utf8').includes(EZO.name));
+    assert.ok(JSON.parse(readFileSync(join(work, 'manual.json'), 'utf8')).manual.contacts.some((contact) => contact.name === EZO.name));
+  }));
+
+test('連絡先を足す：社内の相談先は INH- の続き。番号の記録がなくても載せる', () =>
+  finished((tool) => {
+    tool.hikitsugi('update-start', ['佐藤']);
+    const { id, check } = writeAddedContact(tool, { type: 'internal', answer: '総務課に相談します。番号はありません。連絡は Teams でします。', contact: { name: '総務課', phone: '' } });
+    assert.equal(id, 'INH-01');
+    check();
+    passThrough(tool, id);
+    assert.equal(tool.read('manual-final.json').contacts.find((contact) => contact.id === 'INH-01').name, '総務課');
+  }));
+
+test('連絡先を足す：名前か番号が今回の答えにない、退職する本人、今の連絡先と同じ名前、番号でない番号は止める', () =>
+  finished((tool) => {
+    tool.hikitsugi('update-start', ['佐藤']);
+    // 1 件ずつ試して、取り消してから次を試す
+    const fails = (contact, answer, pattern) => {
+      const { check } = writeAddedContact(tool, { contact, answer });
+      assert.throws(check, pattern);
+      tool.hikitsugi('update-cancel');
+    };
+    // 名前と番号は、記録のどこかではなく今回の答えにあること（カワウソシステムサービスの番号は前の記録にある）
+    fails({ name: 'エゾクロテン電設', phone: '03-0000-0102' }, EZO_ANSWER, /電話番号が今回の答えにありません/);
+    fails({ name: '田中' }, `${EZO_ANSWER}田中に聞きます。`, /退職する担当者を連絡先に載せないでください/);
+    fails({ name: 'カワウソシステムサービス', phone: '' }, `カワウソシステムサービスにも頼みます。`, /VEN-02 と同じ名前です/);
+    fails({ phone: '分からない' }, `${EZO_ANSWER}番号は分からない。`, /番号の形ではありません/);
+    // パスワードの本体らしい答えは、記録の前に断る
+    assert.throws(() => tool.hikitsugi('update-add-contact', ['vendor'], 'エゾクロテン電設のパスワードは abcd1234 です。'), /パスワードの本体/);
+    assert.throws(() => tool.hikitsugi('update-add-contact', ['shop'], EZO_ANSWER), /vendor\|internal/);
+  }));
+
+test('連絡先の番号：見慣れない形（フリーダイヤル、携帯、内線つき）は止めず、確認の表示で「この番号でよいですか」と聞く', () =>
+  finished((tool) => {
+    tool.hikitsugi('update-start', ['佐藤']);
+    const free = '0120-000-131';
+    const { id, check } = writeAddedContact(tool, { contact: { phone: free }, answer: EZO_ANSWER.replace(EZO.phone, free) });
+    check();
+    const { shown } = passThrough(tool, id);
+    assert.match(shown, /電話番号：0120-000-131\n確認：見慣れない形の番号です/);
+    // ふつうの番号には出さない
+    assert.doesNotMatch(tool.hikitsugi('review-show', ['VEN-02']), /見慣れない形/);
+  }));
+
+const PANEL_ANSWER = `分電盤のブレーカーが落ちて事務所の電気が止まったときは、${EZO.name}に電話します。`;
+const PANEL_TITLE = '分電盤のブレーカーが落ちた';
+
+/** 症状を足す更新で、共通部分と新しいページを書く。ページは今のページを写し、題名と ③ の連絡先を変える。 */
+function writeAddedSymptom({ work, hikitsugi, write, read }, contactId) {
+  const before = read('manual-final.json');
+  hikitsugi('update-add', [], PANEL_ANSWER);
+  const round = String(read('state.json').round);
+  const pageId = read('state.json').update.target;
+  hikitsugi('writer-task', [round, 'common']);
+  const { previous } = read('writer-task.json').revision;
+  write(`writer-${round}-common.json`, { ...previous, page_plan: [...previous.page_plan, { id: pageId, category: 'other', symptom: PANEL_TITLE }] });
+  hikitsugi('check-writer', [round, 'common']);
+  hikitsugi('writer-task', [round, pageId]);
+  const task = read('writer-task.json');
+  const source = before.symptom_pages[0];
+  const ids = new Set(pageStatementIds(source));
+  const { reply_to_staff: _reply, ...page } = source;
+  const statements = before.statements.filter((s) => ids.has(s.id) && !s.usage).map(({ usage: _usage, ...s }) => (s.id === source.title ? { ...s, text: PANEL_TITLE, evidence: [task.revision.page_fix.evidence] } : s));
+  write(`writer-${round}-${pageId}.json`, { statements, page: { ...page, fallback: { contact: contactId } } });
+  hikitsugi('check-writer', [round, pageId]);
+  return { pageId, task };
+}
+
+test('足した連絡先を、続けて足した症状ページの ③ に使える。3 つの出力と更新の記録に出る', () =>
+  finished((tool) => {
+    const { work, hikitsugi, read } = tool;
+    hikitsugi('update-start', ['佐藤']);
+    const { id, check } = writeAddedContact(tool);
+    check();
+    passThrough(tool, id);
+    const { pageId, task } = writeAddedSymptom(tool, id);
+    assert.ok(task.contacts.some((contact) => contact.id === id && contact.name === EZO.name), '新しいページが選べる連絡先に入る');
+    passThrough(tool, pageId);
+    const after = read('manual-final.json');
+    const page = after.symptom_pages.find((candidate) => candidate.id === pageId);
+    assert.equal(page.fallback.contact, id, '③ の連絡先はエゾクロテン電設');
+    // PC 用：そのページの ③ に名前が出る
+    const html = readFileSync(join(work, 'manual.html'), 'utf8');
+    const start = html.indexOf(`<article id="symptom-${pageId}"`);
+    assert.ok(start >= 0, 'PC 用にページができる');
+    const section = html.slice(start, html.indexOf('</article>', start));
+    assert.ok(section.includes(PANEL_TITLE) && section.includes(EZO.name), 'PC 用のページの ③ に出る');
+    // スマホ用：そのページのファイルに出る
+    const file = readdirSync(join(work, PHONE_DIR)).find((name) => name.includes(PANEL_TITLE));
+    assert.ok(file, 'スマホ用のファイルができる');
+    assert.ok(readFileSync(join(work, PHONE_DIR, file), 'utf8').includes(EZO.name));
+    // manual.json
+    const bundle = JSON.parse(readFileSync(join(work, 'manual.json'), 'utf8')).manual;
+    assert.equal(bundle.symptom_pages.find((candidate) => candidate.id === pageId).fallback.contact, id);
+    assert.deepEqual(after.updates.map((update) => [update.kind, update.target, update.by, update.account, update.host]), [
+      ['add_contact', id, '佐藤', 'user-a', 'OKJ-PC01'],
+      ['add', pageId, '佐藤', 'user-a', 'OKJ-PC01'],
+    ]);
+  }));
+
+test('足した連絡先の文が照合で指摘されたら、その連絡先だけを書き直す。上限で止まったら取り消せて、連絡先も回も戻る', () =>
+  finished((tool) => {
+    const { work, hikitsugi, write, read } = tool;
+    hikitsugi('update-start', ['佐藤']);
+    const before = { manual: read('manual-final.json'), round: read('state.json').round };
+    const { id, check } = writeAddedContact(tool);
+    check();
+    for (let attempt = 0; ; attempt += 1) {
+      const round = String(read('state.json').round);
+      if (nextStep(work).step === 'editor') {
+        write(`editor-${round}.json`, { rewrites: [], glossary: [] });
+        hikitsugi('merge-edits', [round]);
+      }
+      const scope = read(`verify-scope-${round}.json`).statements;
+      const role = read(`edited-${round}.json`).contacts.find((contact) => contact.id === id).role;
+      write(`verification-${round}.json`, { results: scope.map((statement) => ({ statement, verdict: statement === role ? 'unsupported' : 'correct', reason: statement === role ? '答えにない' : '', checked: [], conflicts_with: [] })) });
+      const result = hikitsugi('check-verification', [round]);
+      if (/上限/.test(result)) break;
+      assert.match(result, new RegExp(`直す部分：${id}`), '書き直すのは足した連絡先だけ');
+      assert.deepEqual(nextStep(work), { step: 'writer', round: Number(round) + 1, part: id });
+      hikitsugi('writer-task', [String(Number(round) + 1), id]);
+      const task = read('writer-task.json');
+      assert.equal(task.part, 'contact');
+      assert.equal(task.revision.previous.contact.id, id, '差し戻しの回には、前の版に入った連絡先を直す');
+      assert.equal(task.revision.update.add_contact, undefined);
+      write(`writer-${Number(round) + 1}-${id}.json`, { statements: task.revision.previous.statements, contact: task.revision.previous.contact });
+      hikitsugi('check-writer', [String(Number(round) + 1), id]);
+      assert.ok(attempt < 3, '差し戻しは上限で止まる');
+    }
+    assert.equal(nextStep(work).step, 'not_passed');
+    hikitsugi('update-cancel');
+    assert.deepEqual(read('manual-final.json').contacts, before.manual.contacts, '足した連絡先は残らない');
+    assert.equal(read('state.json').round, before.round);
+    assert.equal(nextStep(work).step, 'update');
+  }));

@@ -69,8 +69,43 @@ function pagesWithContact(manual, id) {
 
 const SUMMARY_MAX = 60;
 
-/** 更新の記録の種類の名前。機器は「手順を直す」から直すので、手順の修正に入れる。 */
-export const UPDATE_KIND_LABELS = { contact: '連絡先の変更', page: '手順の修正', device: '手順の修正', add: '症状の追加', memo: 'メモの取り込み' };
+/** 更新の記録の種類の名前。連絡先と機器は「変更」「追加」でそろえる。 */
+export const UPDATE_KIND_LABELS = { contact: '連絡先の変更', add_contact: '連絡先の追加', device: '機器の変更', add_device: '機器の追加', page: '手順の修正', add: '症状の追加', memo: 'メモの取り込み' };
+
+/** 足す連絡先の ID。業者は VEN-、社内の相談先は INH- の続きの番号にする。 */
+export function nextContactId(manual, type) {
+  const prefix = { vendor: 'VEN', internal: 'INH' }[type];
+  if (!prefix) throw new Error('連絡先の種類は vendor（業者）か internal（社内の相談先）です');
+  const number = Math.max(0, ...manual.contacts.filter((contact) => contact.id.startsWith(`${prefix}-`)).map((contact) => Number(contact.id.slice(4)))) + 1;
+  if (number > 99) throw new Error(`${prefix} の連絡先はこれ以上足せません`);
+  return `${prefix}-${String(number).padStart(2, '0')}`;
+}
+
+/** 足す機器の ID。今の D1、D2… の続き。ほかの形の ID とも重ならないようにする。 */
+export function nextDeviceId(manual) {
+  const used = new Set(manual.devices.map((device) => device.id));
+  let number = Math.max(0, ...manual.devices.map((device) => Number(device.id.match(/^D(\d+)$/)?.[1] ?? 0))) + 1;
+  while (used.has(`D${number}`)) number += 1;
+  return `D${number}`;
+}
+
+/**
+ * 電話番号の形。明らかに番号でないものだけを止め、見慣れない形は確認を求める（本人の判断）。
+ * - empty：空（記録がない）
+ * - standard：市外局番からの 10 桁（03-0000-0102 の形）
+ * - unusual：フリーダイヤル、携帯、内線つきなど、番号ではあるが見慣れない形。止めずに確認を求める
+ * - invalid：数字が 2 つ未満か、数字と区切り以外の文字がある（「内線」「代表」は除く）
+ */
+export function phoneShape(phone) {
+  const text = String(phone ?? '').normalize('NFKC').trim();
+  if (!text) return 'empty';
+  const digits = text.replace(/\D/g, '');
+  const rest = text.replace(/内線|代表|ext\.?|ext/gi, '').replace(/[\d\s\-‐－ー()（）+#]/g, '');
+  if (digits.length < 2 || rest) return 'invalid';
+  if (/^0(?!120|800|[5789]0)\d{1,4}-\d{1,4}-\d{3,4}$/.test(text) && digits.length === 10) return 'standard';
+  return 'unusual';
+}
+
 
 /**
  * 更新の記録に残す、内容の一言。本人の答えが60字に収まればそのまま。
