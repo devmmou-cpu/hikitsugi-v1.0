@@ -593,3 +593,22 @@ test('round の検査：回の番号がおかしい manual.json からは更新�
     assert.throws(() => tool.hikitsugi('update-cancel'), /回の番号が正しくありません/);
   });
 });
+
+test('段 1 の自動の通し：API を使わない検査（見慣れない番号の確認、退職する本人、番号でない番号、パスワード、回の番号）がすべて通る', async () => {
+  const { apiFreeChecks } = await import('../eval/stage1-update.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'hikitsugi-stage1-auto-'));
+  try {
+    const results = apiFreeChecks(dir);
+    assert.equal(results.length, 6);
+    for (const result of results) assert.ok(result.passed, `${result.label}：${result.detail}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('評価の Writer の呼び出し：連絡先と機器の更新では、その 1 件の形で答えさせる', async () => {
+  const { buildWriterRequest } = await import('../eval/lib/writing.mjs');
+  const shape = (part) => Object.keys(buildWriterRequest({ ...sources, task: { part, revision: { previous: {}, findings: [] } } }).output_config.format.schema.properties).sort().join(',');
+  assert.equal(shape('contact'), 'contact,statements');
+  assert.equal(shape('device'), 'device,statements');
+});

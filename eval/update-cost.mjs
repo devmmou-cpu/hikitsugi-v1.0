@@ -21,8 +21,11 @@ export const CASES = [
   { name: 'add', label: '症状の追加', target: () => null, command: 'update-add', comment: '社内サーバーのランプが赤いときは、電源を切らずにイイズナソフトに電話します。' },
 ];
 
-/** 1回の更新を、完成の表示に戻るまで進める。 */
-export async function driveUpdate({ work, api, record, overBudget = () => false }) {
+/**
+ * 1回の更新を、完成の表示に戻るまで進める。
+ * @param review 更新する人の確認。省略時は「このままでよい」とする。({ page, tool }) を受け取る
+ */
+export async function driveUpdate({ work, api, record, overBudget = () => false, review = ({ page, tool }) => tool('review-ok', [page]) }) {
   const read = (name) => JSON.parse(readFileSync(join(work, name), 'utf8'));
   const write = (name, value) => writeFileSync(join(work, name), JSON.stringify(value, null, 2));
   const tool = (command, args = [], stdin = '') => run(command, args, { work, stdin });
@@ -79,7 +82,7 @@ export async function driveUpdate({ work, api, record, overBudget = () => false 
       write('phrases.json', parsed);
       tool('check-phrases');
     } else if (step.step === 'review') {
-      tool('review-ok', [step.page]);
+      review({ page: step.page, tool });
     } else if (step.step === 'render') {
       tool('render');
     } else {

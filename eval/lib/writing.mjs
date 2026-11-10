@@ -2,7 +2,7 @@
 
 import { applyEdits } from '../../plugin/lib/apply-edits.mjs';
 import { plainProblems } from '../../plugin/lib/plain-check.mjs';
-import { assembleManual, checkCommon, checkPage, commonSchema, contactSchema, droppedFromCommon, mergeRewritten, ownersOf, pageSchema, previousPiece, symptomSchema } from '../../plugin/lib/assemble.mjs';
+import { assembleManual, checkCommon, checkPage, commonSchema, contactSchema, deviceSchema, droppedFromCommon, mergeRewritten, ownersOf, pageSchema, previousPiece, symptomSchema } from '../../plugin/lib/assemble.mjs';
 import { additionProblems, applySymptomAnswer, basisProblems, symptomGaps } from '../../plugin/lib/symptom-check.mjs';
 import { coverageLeaks } from '../../plugin/lib/coverage-check.mjs';
 import { pagesForPhrases, phraseProblems } from '../../plugin/lib/search-index.mjs';
@@ -48,14 +48,14 @@ const EDITOR_SCHEMA = {
 
 /**
  * Writer のリクエスト。調査データ、聞き取り、部品は全部分で同じなので、先頭に置いてキャッシュする。
- * @param task 書く部分。{ part: 'common' } か { part: 'page', entry, contacts }。書き直しなら revision を持つ
+ * @param task 書く部分。{ part: 'common' }、{ part: 'page', entry, contacts }、更新の { part: 'contact' } か { part: 'device' }。書き直しなら revision を持つ
  */
 export function buildWriterRequest({ survey, transcript, retiree, task = { part: 'common' }, structure, agent = loadAgent('plugin/agents/writer.md') }) {
   const stable = tagged({ survey, transcript, library: libraryForAgents() });
   const dynamic = { task: JSON.stringify(retiree ? { ...task, retiree } : task) };
   if (structure) dynamic.structure_problems = structure;
-  const what = task.part === 'common' ? '共通部分' : task.part === 'symptoms' ? '手順ページのない困りごとの判断' : task.part === 'contact' ? '連絡先' : `手順ページ ${task.entry.id}`;
-  const schema = stripUnsupported(task.part === 'common' ? commonSchema() : task.part === 'symptoms' ? symptomSchema() : task.part === 'contact' ? contactSchema() : pageSchema());
+  const what = task.part === 'common' ? '共通部分' : task.part === 'symptoms' ? '手順ページのない困りごとの判断' : task.part === 'contact' ? '連絡先' : task.part === 'device' ? '機器' : `手順ページ ${task.entry.id}`;
+  const schema = stripUnsupported(task.part === 'common' ? commonSchema() : task.part === 'symptoms' ? symptomSchema() : task.part === 'contact' ? contactSchema() : task.part === 'device' ? deviceSchema() : pageSchema());
   return buildRequest(agent, schema, [
     { type: 'text', text: stable, cache_control: { type: 'ephemeral' } },
     { type: 'text', text: `${tagged(dynamic)}\n\n${structure || task.revision ? `${what}の問題を直して、この部分の全体を返してください。` : `${what}を書いてください。`}` },
