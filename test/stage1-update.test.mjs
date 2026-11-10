@@ -319,7 +319,7 @@ const PANEL_TITLE = '分電盤のブレーカーが落ちた';
 /** 症状を足す更新で、共通部分と新しいページを書く。ページは今のページを写し、題名と ③ の連絡先を変える。 */
 function writeAddedSymptom({ work, hikitsugi, write, read }, contactId) {
   const before = read('manual-final.json');
-  hikitsugi('update-add', [], PANEL_ANSWER);
+  assert.match(hikitsugi('update-add', [], PANEL_ANSWER), /。T\d+ を書きます$/);
   const round = String(read('state.json').round);
   const pageId = read('state.json').update.target;
   hikitsugi('writer-task', [round, 'common']);
