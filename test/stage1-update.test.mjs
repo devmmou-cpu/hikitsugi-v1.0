@@ -528,6 +528,49 @@ test('合格の条件：連絡先を足し、その連絡先を ③ にした症
     for (const value of ['user-c', 'OKJ-PC09']) assert.ok(!html.includes(value) && !phone.includes(value), `${value} は画面に出さない`);
   }));
 
+test('manual.json から作り直した説明書でも、足す更新を作り直しまで通せる。「分からない」の回答を根拠にした前の版の文で止まらない', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hikitsugi-stage1-bundle-'));
+  try {
+    const bundle = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8'));
+    writeFileSync(join(dir, 'manual.json'), JSON.stringify(bundle));
+    const work = join(dir, 'hikitsugi-work');
+    const tool = {
+      dir,
+      work,
+      hikitsugi: (command, args = [], stdin = '') => run(command, args, { work, stdin }),
+      write: (name, value) => writeFileSync(join(work, name), JSON.stringify(value)),
+      read: (name) => JSON.parse(readFileSync(join(work, name), 'utf8')),
+    };
+    tool.hikitsugi('update-start', ['佐藤']);
+    // サンプルには、manual.json に入れない「分からない」の回答を根拠にした文がある
+    const omitted = tool.read('state.json').bundle_omitted_evidence;
+    assert.ok(omitted?.length, 'manual.json に入っていない根拠を覚える');
+    const contact = writeAddedContact(tool);
+    contact.check();
+    passThrough(tool, contact.id);
+    const { pageId } = writeAddedSymptom(tool, contact.id);
+    passThrough(tool, pageId);
+    const device = writeAddedDevice(tool);
+    device.check();
+    passThrough(tool, device.id);
+    const manual = tool.read('manual-final.json');
+    assert.equal(manual.symptom_pages.find((page) => page.id === pageId).fallback.contact, contact.id);
+    assert.ok(readFileSync(join(dir, 'manual.html'), 'utf8').includes(UPS_NAME));
+    // 作り直した manual.json から、もう一度始められる
+    rmSync(work, { recursive: true, force: true });
+    tool.hikitsugi('update-start', ['佐藤']);
+    assert.deepEqual(tool.read('state.json').bundle_omitted_evidence, omitted);
+    // 新しく書く文が、作業フォルダの聞き取りにない根拠を引けば、今までどおり止まる
+    const added = writeAddedContact(tool, { answer: EZO_ANSWER.replace('エゾクロテン電設', 'イタチ事務機'), contact: { name: 'イタチ事務機' } });
+    const round = String(added.round);
+    const raw = tool.read(`writer-${round}-${added.id}.json`);
+    tool.write(`writer-${round}-${added.id}.json`, { ...raw, statements: raw.statements.map((s) => ({ ...s, evidence: [omitted[0]] })) });
+    assert.throws(added.check);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('round の検査：回の番号がおかしい manual.json からは更新を始められず、足す更新の取り消しでも作業フォルダの外を消さない', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hikitsugi-stage1-round-'));
   try {

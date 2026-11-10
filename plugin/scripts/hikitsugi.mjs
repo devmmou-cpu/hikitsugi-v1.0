@@ -851,6 +851,9 @@ function restoreFromBundle(work) {
   });
   markChecked(work, `verification-${round}.json`);
   const pages = Object.fromEntries(manual.symptom_pages.map((page) => [page.id, 'ok']));
+  // manual.json には「分からない」の回答を入れない（11/4 の決定）。前の版の文がそれを根拠にしていれば、ここで覚えておき、
+  // render の「記録にない根拠」の検査から除く。新しく書く文は、作業フォルダの聞き取りの記録にある根拠しか通らない
+  const omitted = missingInterviewEvidence(manual, sources.transcript);
   writeJson(join(work, 'state.json'), {
     company: bundle.company,
     company_name: bundle.company_name,
@@ -861,6 +864,7 @@ function restoreFromBundle(work) {
     passed: true,
     output_dir: dirname(work),
     restored: true,
+    ...(omitted.length ? { bundle_omitted_evidence: omitted } : {}),
     review: { reviewer: manual.review.reviewer, pages, done: true, confirmed_on: manual.review.confirmed_on },
   });
 }
@@ -1107,7 +1111,8 @@ function render(work, [outPath]) {
   const transcriptPath = join(work, 'transcript.json');
   // 文の根拠の聞き取りが記録にないまま完成させない
   if (existsSync(transcriptPath)) {
-    const missing = missingInterviewEvidence(manual, readJson(transcriptPath));
+    const omitted = new Set(state.bundle_omitted_evidence ?? []);
+    const missing = missingInterviewEvidence(manual, readJson(transcriptPath)).filter((id) => !omitted.has(id));
     if (missing.length) throw new Problem(`聞き取りの記録にない根拠があります：${missing.slice(0, 5).join('、')}`);
   }
   const unknowns = unknownsOf(work, state);
