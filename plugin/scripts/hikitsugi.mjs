@@ -30,7 +30,8 @@ import { PHONE_DIR, writePhoneBundle } from '../renderer/phone.mjs';
 const PC_NAME = '「ITの取扱説明書（PC 用）manual.html」';
 const PHONE_NAME = `「${PHONE_DIR}」フォルダ`;
 import { oversizeMessage, PC_FILE_LIMIT, PC_FILE_TARGET, writeWithinLimit } from '../lib/limits.mjs';
-import { BUNDLE_NAME, bundleOf, changeSummary, pagesNeedingPhrases, pagesOfContact, parseMemos, targetKind, updateSummary, withContactPhone, withUpdateMark } from '../lib/update.mjs';
+import { BUNDLE_NAME, bundleOf, changeSummary, pagesNeedingPhrases, pagesOfContact, parseMemos, targetKind, UPDATE_KIND_LABELS, updateSummary, withContactPhone, withUpdateMark } from '../lib/update.mjs';
+import { machineIdentity, otherAccountsOf } from '../lib/identity.mjs';
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const MAX_RESENDS = 2;
@@ -842,15 +843,47 @@ function restoreFromBundle(work) {
   });
 }
 
-/** 更新を始める人を記録する。作業フォルダがなければ、manual.json から作り直す。 */
+const NOT_READ = '取得できませんでした';
+const NOT_RECORDED = '記録なし';
+
+/**
+ * 更新を始める人を記録する。作業フォルダがなければ、manual.json から作り直す。
+ * PC のアカウント名と PC 名も読んで残す。記録で、本人確認ではない。
+ * 直近の更新の記録を出し、名乗った名前が過去に別のアカウント名と組になっていれば注意を出す（止めない）。
+ */
 function updateStart(work, nameParts) {
   const by = nameParts.join(' ').trim();
   if (!by) throw new UsageError('使い方：update-start <更新する人の名前>');
+  let identity;
+  try {
+    identity = machineIdentity();
+  } catch (error) {
+    throw new Problem(error.message);
+  }
   if (!existsSync(join(work, 'state.json'))) restoreFromBundle(work);
   const state = readJson(join(work, 'state.json'));
   if (!state.passed || !state.review?.done) throw new Problem('取扱説明書が完成していないので、更新を始められません');
-  writeJson(join(work, 'state.json'), { ...state, updater: by });
-  return `${by} さんの更新を始めます`;
+  writeJson(join(work, 'state.json'), { ...state, updater: by, updater_identity: identity });
+  const updates = readJson(join(work, 'manual-final.json')).updates ?? [];
+  const latest = updates.at(-1);
+  const lines = [
+    `${by} さんの更新を始めます`,
+    `記録します：アカウント名 ${identity.account ?? NOT_READ}、PC 名 ${identity.host ?? NOT_READ}${identity.source === 'env' ? '（環境変数で指定）' : ''}。画面には出さず、manual.json にだけ残します`,
+    latest ? `直近の更新：${latest.date} ${latest.by}（アカウント名 ${latest.account ?? NOT_RECORDED}、PC 名 ${latest.host ?? NOT_RECORDED}）` : '更新の記録はまだありません',
+  ];
+  const others = otherAccountsOf(updates, by, identity.account);
+  if (others.length) lines.push(`注意：「${by}」の名前は、前の更新で別のアカウント名（${others.join('、')}）と組になっていました。続けるかを本人に確かめてください`);
+  return lines.join('\n');
+}
+
+/** 更新の記録を、新しい順に端末へ出す。アカウント名と PC 名は画面に出さないので、ここで見る。 */
+function history(work) {
+  const updates = readJson(join(work, 'manual-final.json')).updates ?? [];
+  if (!updates.length) return '更新の記録はまだありません';
+  return [...updates]
+    .reverse()
+    .map((update) => `${update.date} ${UPDATE_KIND_LABELS[update.kind] ?? '更新'} ${update.by}（アカウント名 ${update.account ?? NOT_RECORDED}、PC 名 ${update.host ?? NOT_RECORDED}）対象 ${update.target}`)
+    .join('\n');
 }
 
 function updateOutput(work, [path]) {
@@ -905,7 +938,7 @@ function beginUpdate(work, { kind, target, title, comment, question, todo, extra
     round_base: round,
     todo,
     page_fix: { page: todo.at(-1), comment: added.entry.answer, evidence: added.entry.id },
-    update: { kind, target, by: state.updater, summary: updateSummary(added.entry.answer), ...(fromMemo(work, target) ? { from_memo: true } : {}), ...extra },
+    update: { kind, target, by: state.updater, ...(state.updater_identity ? { identity: state.updater_identity } : {}), summary: updateSummary(added.entry.answer), ...(fromMemo(work, target) ? { from_memo: true } : {}), ...extra },
     review: { ...state.review, done: false },
   });
   return `記録しました（${added.entry.id}）。${target} を書き直します`;
@@ -962,7 +995,7 @@ function updateCancel(work) {
 /** 更新者の「このままでよい」。更新の印を付け、作り直す段階へ進める。 */
 function finishUpdate(work, state, manual, pageId) {
   if (pageId !== state.update.target) throw new Problem(`確認するのは ${state.update.target} です`);
-  writeJson(join(work, 'manual-final.json'), checkSchema('manual', withUpdateMark(manual, { target: pageId, by: state.update.by, date: today(), summary: state.update.summary, kind: state.update.from_memo ? 'memo' : state.update.kind })));
+  writeJson(join(work, 'manual-final.json'), checkSchema('manual', withUpdateMark(manual, { target: pageId, by: state.update.by, date: today(), summary: state.update.summary, kind: state.update.from_memo ? 'memo' : state.update.kind, identity: state.update.identity })));
   const pages = Object.fromEntries(manual.symptom_pages.map((page) => [page.id, 'ok']));
   const before = existsSync(join(work, BEFORE_UPDATE)) ? readJson(join(work, BEFORE_UPDATE)).manual : null;
   rmSync(join(work, 'manual.html'), { force: true });
@@ -1083,6 +1116,7 @@ const COMMANDS = {
   'dead-end-answer': deadEndAnswer,
   'dead-end-unknown': deadEndUnknown,
   'update-start': updateStart,
+  history,
   'update-output': updateOutput,
   'update-targets': updateTargets,
   'update-fix': updateFix,

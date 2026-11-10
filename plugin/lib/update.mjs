@@ -84,11 +84,15 @@ export function updateSummary(answer) {
   return `${head.slice(0, breakAt > 0 ? breakAt : SUMMARY_MAX).join('')}…`;
 }
 
-/** 更新の印を付ける。角印は更新で確認した人と最新の確認日を出し、前任者の確認の記録は残す。 */
-export function withUpdateMark(manual, { target, by, date, summary, kind: updateKind }) {
+/**
+ * 更新の印を付ける。角印は更新で確認した人と最新の確認日を出し、前任者の確認の記録は残す。
+ * identity は更新した PC のアカウント名と PC 名。manual.json にだけ残り、画面には出さない。取れなかった値は残さない。
+ */
+export function withUpdateMark(manual, { target, by, date, summary, kind: updateKind, identity }) {
   const kind = targetKind(manual, target);
   const pages = kind === 'page' ? [target] : kind === 'contact' ? pagesWithContact(manual, target) : [];
-  const updates = [...(manual.updates ?? []), { target, pages, by, date, ...(updateKind ? { kind: updateKind } : {}), ...(summary ? { summary } : {}) }];
+  const machine = identity ? { ...(identity.account ? { account: identity.account } : {}), ...(identity.host ? { host: identity.host } : {}), ...(identity.source ? { identity_source: identity.source } : {}) } : {};
+  const updates = [...(manual.updates ?? []), { target, pages, by, date, ...(updateKind ? { kind: updateKind } : {}), ...(summary ? { summary } : {}), ...machine }];
   return {
     ...manual,
     review: { ...manual.review, updated_by: [...new Set(updates.map((update) => update.by))].join('・'), updated_on: date },
