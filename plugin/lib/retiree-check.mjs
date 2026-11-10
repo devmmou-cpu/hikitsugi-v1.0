@@ -7,7 +7,7 @@ const PLACE = '連絡先|転送先|相談先|報告先|問い合わせ先|問合
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** 名前の呼び方の一覧。「田中 太郎」なら、全体と名字で探す。敬称は外す。 */
-const nameForms = (name) => {
+export const nameForms = (name) => {
   const plain = name.trim().replace(/(さん|様|氏)$/, '');
   const compact = plain.replace(/\s+/g, '');
   return [...new Set([compact, plain.split(/\s+/)[0]])].filter(Boolean);
@@ -38,6 +38,14 @@ export function retireeFindings(manual, retiree) {
     if (forms.some((form) => contact.name.includes(form))) hits.add(contact.role);
   }
   return [...hits].map((statement) => ({ statement, verdict: 'dangerous', reason, checked: [], conflicts_with: [] }));
+}
+
+/** 連絡先の一覧に、退職する担当者そのものが載っていないか。Writer の段階で止めるための、形の問題の文を返す。 */
+export function retireeContactProblems(contacts, retiree) {
+  const forms = retiree?.trim() ? nameForms(retiree) : [];
+  return contacts
+    .filter((contact) => forms.some((form) => contact.name.includes(form)))
+    .map((contact) => `${contact.id}: 退職する担当者を連絡先に載せないでください。説明書を読むころには連絡できません。社内の相談先の先頭に置き換えてください`);
 }
 
 /** 検証結果に、文字列の照合の結果を上書きする。AI の判定より優先する。 */

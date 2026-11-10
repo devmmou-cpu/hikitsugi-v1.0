@@ -1,6 +1,8 @@
 // 手順ページの形の検査。後任が迷わないように、Writer の出力をプログラムで確かめる。
 // /hikitsugi:start と評価の両方で使う。
 
+import { retireeContactProblems } from './retiree-check.mjs';
+
 const FIRST_STEPS_MAX = 3;
 const ROLE_LENGTH_MAX = 15;
 
@@ -143,7 +145,7 @@ export function contactProblems(manual) {
 
 /** 取扱説明書の全体の形の問題。 */
 export function manualProblems(manual, retiree) {
-  const problems = [...statementProblems(manual.statements, retiree), ...pageProblems(manual), ...contactProblems(manual)];
+  const problems = [...statementProblems(manual.statements, retiree), ...pageProblems(manual), ...contactProblems(manual), ...retireeContactProblems(manual.contacts, retiree)];
   // 途中で書くのをやめた出力を、合格させない
   if (manual.symptom_pages.length === 0) problems.push('手順ページが1つもありません。最初から全体を書いてください');
   return problems;

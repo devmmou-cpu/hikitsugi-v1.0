@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { contactProblems, pageProblems, pageStatementIds, statementProblems, reassuranceProblems } from './page-check.mjs';
 import { composeStatements, contactEvidenceProblems, loadLibrary, pageDetailProblems, stepSourceProblems } from './procedures.mjs';
+import { retireeContactProblems } from './retiree-check.mjs';
 import { hasCredential } from './transcript.mjs';
 
 const MANUAL_SCHEMA = JSON.parse(readFileSync(new URL('../schemas/manual.schema.json', import.meta.url), 'utf8'));
@@ -101,7 +102,7 @@ export function checkCommon(output, sources, { library = loadLibrary(), retiree 
   const ids = output.page_plan.map((entry) => entry.id);
   if (new Set(ids).size !== ids.length) problems.push('page_plan の id が重複しています');
   const piece = { statements, contacts: output.contacts };
-  problems.push(...statementProblems(statements, retiree), ...contactProblems(piece), ...contactEvidenceProblems(output.contacts, sources));
+  problems.push(...statementProblems(statements, retiree), ...contactProblems(piece), ...retireeContactProblems(output.contacts, retiree), ...contactEvidenceProblems(output.contacts, sources));
   // 退職前にやることは本人に見せる一覧。根拠は実際の回答だけで、認証情報を書かない
   const answered = new Set(sources.transcript.entries.filter((entry) => entry.status === 'answered').map((entry) => entry.id));
   output.before_leaving.forEach(({ text, evidence }, index) => {
@@ -121,7 +122,7 @@ export function checkContact(output, id, sources, { library = loadLibrary(), ret
   const missing = contactStatementIds(contact).filter((ref) => !known.has(ref));
   if (missing.length) problems.push(`statements にない文章を参照しています: ${missing.join(', ')}`);
   const piece = { statements, contacts: [contact] };
-  problems.push(...statementProblems(statements, retiree), ...contactProblems(piece), ...contactEvidenceProblems([contact], sources));
+  problems.push(...statementProblems(statements, retiree), ...contactProblems(piece), ...retireeContactProblems([contact], retiree), ...contactEvidenceProblems([contact], sources));
   return { output: { statements, contact }, problems };
 }
 
