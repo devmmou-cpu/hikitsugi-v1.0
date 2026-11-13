@@ -823,7 +823,30 @@ const checkRound = (value, min, where) => {
   return value;
 };
 
-/** manual.json から作業フォルダを作り直す。合格済みの説明書として扱う。 */
+/**
+ * manual.json には「分からない」「あとで」の回答を入れない（11/4 の決定）。前の版の文がその回答を根拠にしていれば、
+ * 作り直しのあとの render の「記録にない根拠」の検査から除く。黙って除かず、除いた根拠と、それを引く文の番号を返して画面に出す。
+ * 根拠がその回答だけの文は、前任者が分からなかったことを書いた文として扱う（前の版で照合と確認を済ませた文なので、止めずに残し、番号を出す）。
+ * 「まだ分かっていないこと」の記録が manual.json にないときは、その回答とはみなせないので止める。
+ */
+function bundleOmissions(bundle) {
+  const evidence = missingInterviewEvidence(bundle.manual, bundle.sources.transcript);
+  if (!evidence.length) return null;
+  if (!(bundle.unknowns ?? []).length) throw new Problem(`聞き取りの記録にない根拠があります：${evidence.slice(0, 5).join('、')}。manual.json に「まだ分かっていないこと」の記録がないので、「分からない」の回答の根拠とはみなせません`);
+  const omitted = new Set(evidence);
+  const citing = bundle.manual.statements.filter((statement) => (statement.evidence ?? []).some((id) => omitted.has(id)));
+  const only = citing.filter((statement) => statement.evidence.every((id) => omitted.has(id)));
+  return { evidence, statements: citing.map(({ id }) => id), unknown_only: only.map(({ id }) => id) };
+}
+
+/** bundleOmissions の結果を、update-start で出す行にする。 */
+function omissionLines({ evidence, statements, unknown_only: only }) {
+  const lines = [`作り直しの検査から除いた根拠：${evidence.length} 件（${evidence.join('、')}）。manual.json に入れていない「分からない」「あとで」の回答です。この回答を根拠にした前の版の文：${statements.length} 件（${statements.join('、')}）`];
+  if (only.length) lines.push(`このうち根拠がこの回答だけの文：${only.length} 件（${only.join('、')}）。前任者が分からなかったことを書いた文として、前の版のまま残します`);
+  return lines;
+}
+
+/** manual.json から作業フォルダを作り直す。合格済みの説明書として扱う。除いた根拠があれば、画面に出す行を返す。 */
 function restoreFromBundle(work) {
   const path = join(dirname(work), BUNDLE_NAME);
   const bundle = readJson(path);
@@ -832,6 +855,8 @@ function restoreFromBundle(work) {
   checkRound(bundle.round, 1, path);
   if (checkRound(bundle.round_base, 0, path) >= bundle.round) throw new Problem(`${path} の回の番号が正しくありません`);
   checkSchema('manual', bundle.manual);
+  // 書く前に確かめる。止めるときに作業フォルダを残さない
+  const omissions = bundleOmissions(bundle);
   mkdirSync(work, { recursive: true });
   const { manual, sources, round, round_base: base } = bundle;
   writeJson(join(work, 'survey.json'), sources.survey);
@@ -851,9 +876,7 @@ function restoreFromBundle(work) {
   });
   markChecked(work, `verification-${round}.json`);
   const pages = Object.fromEntries(manual.symptom_pages.map((page) => [page.id, 'ok']));
-  // manual.json には「分からない」の回答を入れない（11/4 の決定）。前の版の文がそれを根拠にしていれば、ここで覚えておき、
-  // render の「記録にない根拠」の検査から除く。新しく書く文は、作業フォルダの聞き取りの記録にある根拠しか通らない
-  const omitted = missingInterviewEvidence(manual, sources.transcript);
+  // 除く根拠は覚えておき、render の検査からだけ除く。新しく書く文は、作業フォルダの聞き取りの記録にある根拠しか通らない
   writeJson(join(work, 'state.json'), {
     company: bundle.company,
     company_name: bundle.company_name,
@@ -864,9 +887,10 @@ function restoreFromBundle(work) {
     passed: true,
     output_dir: dirname(work),
     restored: true,
-    ...(omitted.length ? { bundle_omitted_evidence: omitted } : {}),
+    ...(omissions ? { bundle_omitted_evidence: omissions.evidence, bundle_omitted_statements: omissions.statements, bundle_unknown_only_statements: omissions.unknown_only } : {}),
     review: { reviewer: manual.review.reviewer, pages, done: true, confirmed_on: manual.review.confirmed_on },
   });
+  return omissions ? omissionLines(omissions) : [];
 }
 
 const NOT_READ = '取得できませんでした';
@@ -886,7 +910,7 @@ function updateStart(work, nameParts) {
   } catch (error) {
     throw new Problem(error.message);
   }
-  if (!existsSync(join(work, 'state.json'))) restoreFromBundle(work);
+  const restored = existsSync(join(work, 'state.json')) ? [] : restoreFromBundle(work);
   const state = readJson(join(work, 'state.json'));
   if (!state.passed || !state.review?.done) throw new Problem('取扱説明書が完成していないので、更新を始められません');
   writeJson(join(work, 'state.json'), { ...state, updater: by, updater_identity: identity });
@@ -899,6 +923,7 @@ function updateStart(work, nameParts) {
   ];
   const others = otherAccountsOf(updates, by, identity.account);
   if (others.length) lines.push(`注意：「${by}」の名前は、前の更新で別のアカウント名（${others.join('、')}）と組になっていました。続けるかを本人に確かめてください`);
+  lines.push(...restored);
   return lines.join('\n');
 }
 

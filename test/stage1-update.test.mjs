@@ -541,10 +541,18 @@ test('manual.json から作り直した説明書でも、足す更新を作り�
       write: (name, value) => writeFileSync(join(work, name), JSON.stringify(value)),
       read: (name) => JSON.parse(readFileSync(join(work, name), 'utf8')),
     };
-    tool.hikitsugi('update-start', ['佐藤']);
-    // サンプルには、manual.json に入れない「分からない」の回答を根拠にした文がある
-    const omitted = tool.read('state.json').bundle_omitted_evidence;
-    assert.ok(omitted?.length, 'manual.json に入っていない根拠を覚える');
+    const started = tool.hikitsugi('update-start', ['佐藤']);
+    // サンプルには、manual.json に入れない「分からない」の回答を根拠にした文がある（STM-049 が INT-018 を引く）
+    const state = tool.read('state.json');
+    const omitted = state.bundle_omitted_evidence;
+    assert.deepEqual(omitted, ['INT-018'], 'manual.json に入っていない根拠を覚える');
+    assert.deepEqual(state.bundle_omitted_statements, ['STM-049']);
+    // STM-049 は INT-011 も引くので、根拠がその回答だけの文ではない
+    assert.deepEqual(state.bundle_unknown_only_statements, []);
+    // 黙って除かない：件数と、引いている文の番号を画面に出す
+    assert.match(started, /作り直しの検査から除いた根拠：1 件（INT-018）/);
+    assert.match(started, /この回答を根拠にした前の版の文：1 件（STM-049）/);
+    assert.doesNotMatch(started, /根拠がこの回答だけの文/);
     const contact = writeAddedContact(tool);
     contact.check();
     passThrough(tool, contact.id);
@@ -566,6 +574,50 @@ test('manual.json から作り直した説明書でも、足す更新を作り�
     const raw = tool.read(`writer-${round}-${added.id}.json`);
     tool.write(`writer-${round}-${added.id}.json`, { ...raw, statements: raw.statements.map((s) => ({ ...s, evidence: [omitted[0]] })) });
     assert.throws(added.check);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('manual.json から作り直すとき、根拠が「分からない」の回答だけになる文は、番号を出して前の版のまま残し、作り直しまで通す', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hikitsugi-stage1-unknown-only-'));
+  try {
+    const bundle = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8'));
+    const target = bundle.manual.statements.find((statement) => statement.id === 'STM-049');
+    target.evidence = ['INT-018'];
+    writeFileSync(join(dir, 'manual.json'), JSON.stringify(bundle));
+    const work = join(dir, 'hikitsugi-work');
+    const tool = {
+      dir,
+      work,
+      hikitsugi: (command, args = [], stdin = '') => run(command, args, { work, stdin }),
+      write: (name, value) => writeFileSync(join(work, name), JSON.stringify(value)),
+      read: (name) => JSON.parse(readFileSync(join(work, name), 'utf8')),
+    };
+    const started = tool.hikitsugi('update-start', ['佐藤']);
+    assert.match(started, /このうち根拠がこの回答だけの文：1 件（STM-049）。前任者が分からなかったことを書いた文として、前の版のまま残します/);
+    assert.deepEqual(tool.read('state.json').bundle_unknown_only_statements, ['STM-049']);
+    // 足す更新を作り直しまで通しても、その文は変わらずに残る
+    const contact = writeAddedContact(tool);
+    contact.check();
+    passThrough(tool, contact.id);
+    const kept = tool.read('manual-final.json').statements.find((statement) => statement.id === 'STM-049');
+    assert.deepEqual(kept, target);
+    // 表示では「社内で相談してください」が社内の相談先に置き換わるので、前半で確かめる
+    assert.ok(readFileSync(join(dir, 'manual.html'), 'utf8').includes('更新の依頼先と、切れそうなときの対応は、記録がありません。'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('manual.json に「まだ分かっていないこと」の記録がないのに、記録にない根拠を引く文があれば、作業フォルダを作らずに止める', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hikitsugi-stage1-no-unknowns-'));
+  try {
+    const bundle = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8'));
+    writeFileSync(join(dir, 'manual.json'), JSON.stringify({ ...bundle, unknowns: [] }));
+    const work = join(dir, 'hikitsugi-work');
+    assert.throws(() => run('update-start', ['佐藤'], { work }), /聞き取りの記録にない根拠があります：INT-018。manual.json に「まだ分かっていないこと」の記録がない/);
+    assert.ok(!existsSync(work), '止めたときは作業フォルダを作らない');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
