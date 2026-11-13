@@ -918,7 +918,7 @@ function updateStart(work, nameParts) {
   const latest = updates.at(-1);
   const lines = [
     `${by} さんの更新を始めます`,
-    `記録します：アカウント名 ${identity.account ?? NOT_READ}、PC 名 ${identity.host ?? NOT_READ}${identity.source === 'env' ? '（環境変数で指定）' : ''}。画面には出さず、manual.json にだけ残します`,
+    `記録します：アカウント名 ${identity.account ?? NOT_READ}、PC 名 ${identity.host ?? NOT_READ}${identity.source === 'env' ? '（環境変数で指定）' : ''}。説明書の画面には出さず、manual.json にだけ残します`,
     latest ? `直近の更新：${latest.date} ${latest.by}（アカウント名 ${latest.account ?? NOT_RECORDED}、PC 名 ${latest.host ?? NOT_RECORDED}）` : '更新の記録はまだありません',
   ];
   const others = otherAccountsOf(updates, by, identity.account);

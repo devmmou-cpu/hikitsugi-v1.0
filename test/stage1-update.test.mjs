@@ -123,7 +123,7 @@ test('更新の記録：名乗った名前、アカウント名、PC 名、出�
     finished((tool) => {
       const { work, hikitsugi, read } = tool;
       const started = hikitsugi('update-start', ['佐藤']);
-      assert.match(started, /記録します：アカウント名 user-z、PC 名 OKJ-ZZ99（環境変数で指定）。画面には出さず、manual\.json にだけ残します/);
+      assert.match(started, /記録します：アカウント名 user-z、PC 名 OKJ-ZZ99（環境変数で指定）。説明書の画面には出さず、manual\.json にだけ残します/);
       assert.match(started, /更新の記録はまだありません/);
       changePhone(tool, '03-0000-0199');
       const [update] = read('manual-final.json').updates;
