@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "company": "kuzuri",
+  "purpose": "段 2（定番の症状）の模擬評価のための補足の事実（11/13、本人の判断）。tanaka_facts.json は変えず、定番の症状についての事実だけを別に足す。実装より前に、1 社あたり「相談されたことがある」3〜4 件、「ない」2〜3 件、残りは事実なしの規則で書いた。点数を見て変えない。エージェントの指示文には、この文や値を書かない",
+  "rules": [
+    "定番の症状の一覧から「相談されたことがあるもの」を選ぶ質問では、consulted が true の症状だけを選ぶ。ここにない症状は選ばない",
+    "ほかの質問では、tanaka_facts.json の事実と同じ扱いで使う。consulted が false の症状を聞かれたら、その事実の文で答える"
+  ],
+  "facts": [
+    {
+      "id": "F-81",
+      "symptom": "CS-01",
+      "consulted": true,
+      "status": "answered",
+      "answer": "印刷できないときは、複合機の画面に紙詰まりやエラーが出ていないかを見てもらいます。直らなければイタチ事務機に電話します。"
+    },
+    {
+      "id": "F-82",
+      "symptom": "CS-07",
+      "consulted": true,
+      "status": "answered",
+      "answer": "メールが送れないときは、まず添付ファイルが大きすぎないかを確かめてもらいます。それでも送れなければ、Microsoft 365 の管理者の社長に相談します。"
+    },
+    {
+      "id": "F-83",
+      "symptom": "CS-13",
+      "consulted": true,
+      "status": "answered",
+      "answer": "営業所との Teams の会議で音が出ないときは、PC の音量とヘッドセットの差し込みを確かめてもらいます。直らなければ配車室の係長に見てもらいます。"
+    },
+    {
+      "id": "F-84",
+      "symptom": "CS-15",
+      "consulted": true,
+      "status": "answered",
+      "answer": "スキャンが届かないときは、NAS のスキャン用フォルダを見てもらいます。そこにもなければイタチ事務機に連絡します。"
+    },
+    {
+      "id": "F-85",
+      "symptom": "CS-12",
+      "consulted": false,
+      "status": "answered",
+      "answer": "OneDrive の同期の相談は受けたことがありません。"
+    },
+    {
+      "id": "F-86",
+      "symptom": "CS-14",
+      "consulted": false,
+      "status": "answered",
+      "answer": "画面が映らないという相談は受けたことがありません。"
+    }
+  ]
+}

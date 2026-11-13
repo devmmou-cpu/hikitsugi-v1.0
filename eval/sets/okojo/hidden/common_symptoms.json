@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "company": "okojo",
+  "purpose": "段 2（定番の症状）の模擬評価のための補足の事実（11/13、本人の判断）。tanaka_facts.json は変えず、定番の症状についての事実だけを別に足す。実装より前に、1 社あたり「相談されたことがある」3〜4 件、「ない」2〜3 件、残りは事実なしの規則で書いた。点数を見て変えない。エージェントの指示文には、この文や値を書かない",
+  "rules": [
+    "定番の症状の一覧から「相談されたことがあるもの」を選ぶ質問では、consulted が true の症状だけを選ぶ。ここにない症状は選ばない",
+    "ほかの質問では、tanaka_facts.json の事実と同じ扱いで使う。consulted が false の症状を聞かれたら、その事実の文で答える"
+  ],
+  "facts": [
+    {
+      "id": "F-81",
+      "symptom": "CS-01",
+      "consulted": true,
+      "status": "answered",
+      "answer": "印刷できないと言われたら、まずその PC を再起動してもらいます。それでも出なければ、複合機の画面にエラーが出ていないかを見てから、イタチ事務機に電話します。"
+    },
+    {
+      "id": "F-82",
+      "symptom": "CS-02",
+      "consulted": true,
+      "status": "answered",
+      "answer": "PC が固まったと言われたら、再起動してもらいます。再起動しても何度も固まる PC は、工場の CAD 担当者に見てもらっていました。"
+    },
+    {
+      "id": "F-83",
+      "symptom": "CS-11",
+      "consulted": true,
+      "status": "answered",
+      "answer": "共有フォルダのファイルを消したと言われたら、外付け USB のバックアップから戻します。戻す作業は管理画面で行うので、カワウソシステムサービスに頼みます。"
+    },
+    {
+      "id": "F-84",
+      "symptom": "CS-12",
+      "consulted": false,
+      "status": "answered",
+      "answer": "OneDrive の同期の相談は受けたことがありません。"
+    },
+    {
+      "id": "F-85",
+      "symptom": "CS-13",
+      "consulted": false,
+      "status": "answered",
+      "answer": "Teams の会議の音や映像の相談は受けたことがありません。"
+    },
+    {
+      "id": "F-86",
+      "symptom": "CS-14",
+      "consulted": false,
+      "status": "answered",
+      "answer": "画面が映らないという相談は受けたことがありません。"
+    }
+  ]
+}
