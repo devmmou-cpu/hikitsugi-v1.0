@@ -4,6 +4,7 @@ import { applyEdits } from '../../plugin/lib/apply-edits.mjs';
 import { plainProblems } from '../../plugin/lib/plain-check.mjs';
 import { assembleManual, checkCommon, checkPage, commonSchema, contactSchema, deviceSchema, droppedFromCommon, mergeRewritten, ownersOf, pageSchema, previousPiece, symptomSchema } from '../../plugin/lib/assemble.mjs';
 import { additionProblems, applySymptomAnswer, basisProblems, symptomGaps } from '../../plugin/lib/symptom-check.mjs';
+import { selectionEvidenceProblems } from '../../plugin/lib/common-symptoms.mjs';
 import { coverageLeaks } from '../../plugin/lib/coverage-check.mjs';
 import { pagesForPhrases, phraseProblems } from '../../plugin/lib/search-index.mjs';
 import { composeProcedures, libraryForAgents } from '../../plugin/lib/procedures.mjs';
@@ -92,13 +93,16 @@ export function buildEditorRequest({ manual, survey, transcript, retiree, findin
 }
 
 /** 1つの部分を書く。形の問題や途中で切れた出力は、1回だけ直してもらう。 */
-async function writePiece({ api, agent, survey, transcript, retiree, task, check, record }) {
+async function writePiece({ api, agent, survey, transcript, retiree, task, check, record, common = null }) {
   let structure;
   let last;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const params = buildWriterRequest({ survey, transcript, retiree, task, structure, agent });
     try {
-      const { output, problems } = check(await callAgent({ api, agent, params, record, estimate: false }));
+      const checked = check(await callAgent({ api, agent, params, record, estimate: false }));
+      const { output } = checked;
+      // 定番の症状を選んだ答えは、どの文の根拠にもしない（/hikitsugi:start の check-writer と同じ）
+      const problems = [...checked.problems, ...selectionEvidenceProblems(output?.statements ?? [], common)];
       if (!problems.length) return output;
       last = new LiveFailure('library', problems.slice(0, 10).join(' / '));
       structure = { previous_output: output, problems };
@@ -130,14 +134,14 @@ const contactsForPages = (common) => {
  * @param revision { previous_manual, findings }
  * @param store { get(name), set(name, value) }。書き終えた部分を保存して、止まっても続きから再開するため
  */
-export async function runWriterLive({ survey, transcript, companyName, retiree, revision, client, record = () => {}, store = { get: () => undefined, set: () => {} }, onLeaks = () => {}, onSymptoms = () => {} }) {
+export async function runWriterLive({ survey, transcript, companyName, retiree, revision, client, record = () => {}, store = { get: () => undefined, set: () => {} }, onLeaks = () => {}, onSymptoms = () => {}, commonSymptoms = null }) {
   const api = await clientOf(client);
   const agent = loadAgent('plugin/agents/writer.md');
   const sources = { survey, transcript };
   const once = async (name, task, check) => {
     const saved = store.get(name);
     if (saved) return saved;
-    const output = await writePiece({ api, agent, survey, transcript, retiree, task, check, record });
+    const output = await writePiece({ api, agent, survey, transcript, retiree, task, check, record, common: commonSymptoms });
     store.set(name, output);
     return output;
   };
@@ -163,7 +167,7 @@ export async function runWriterLive({ survey, transcript, companyName, retiree, 
 
   // 手順ページのない困りごとは、最初の版で1回だけ Writer に判断してもらう。足したページがなければ止める
   const fillSymptoms = async (manual) => {
-    const gaps = symptomGaps(manual, transcript, retiree);
+    const gaps = symptomGaps(manual, transcript, retiree, commonSymptoms);
     if (!gaps.length) {
       onSymptoms({ found: 0, pages: [], excluded: 0 });
       return manual;

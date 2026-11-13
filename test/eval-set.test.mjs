@@ -208,3 +208,17 @@ test('別のパスワード本体を評価セットに入れると失敗する',
   });
   includes(problems, '認証情報の形をした記述');
 });
+
+// ---- 定番の症状の補足の事実（段 2） ----
+test('定番の症状の補足の事実：件数の決まり、ID の重なり、承認済みの一覧、語の検査が効く', () => {
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/common_symptoms.json'), (d) => { d.facts = d.facts.filter((fact) => !fact.consulted).concat(d.facts.filter((fact) => fact.consulted).slice(0, 2)); })), '相談されたことがある症状は 3〜4 件です');
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/common_symptoms.json'), (d) => { d.facts = d.facts.filter((fact) => fact.consulted).concat(d.facts.filter((fact) => !fact.consulted).slice(0, 1)); })), 'ないと答える症状は 2〜3 件です');
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/common_symptoms.json'), (d) => { d.facts[0].id = 'F-01'; })), '模擬の田中さんの事実と重なっています');
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/common_symptoms.json'), (d) => { d.facts[0].symptom = 'CS-99'; })), '承認済みの一覧にない症状です');
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/common_symptoms.json'), (d) => { d.facts[0].answer += 'ZzyxBrand の機械です。'; })), 'ZzyxBrand');
+});
+
+test('定番の症状の補足の事実：保留の会社に置くと失敗する', () => {
+  const problems = withCopy((setDir) => editJson(join(setDir, 'case.json'), (d) => { d.split = 'holdout'; }));
+  includes(problems, '調整用の会社にだけ置きます');
+});

@@ -236,7 +236,9 @@ function pipelineClient({ verdicts }) {
       // 書き直しでは、前の版をそのまま返す。載せ漏れがあれば足す
       if (task.revision?.missing) return fillMissing(task.revision.previous, task.revision.missing);
       if (task.revision) return task.revision.previous;
-      return task.part === 'common' ? pieces().common : pieces().page;
+      // 定番の症状の追加の質問から挙がった困りごとは、偽の Writer では外す
+      if (task.part === 'symptoms') return { decisions: task.gaps.map((gap) => ({ gap: gap.id, decision: 'exclude', reason: '偽の Writer は外します', category: 'other', symptom: '' })) };
+      return noSelection(task.part === 'common' ? pieces().common : pieces().page);
     }
     if (system.includes('Plain-Japanese Editor')) {
       editorCalls += 1;
@@ -278,8 +280,16 @@ test('通し：合格すれば HTML を作り、エージェントごとの費�
     assert.equal(summary.label, '模擬評価');
     assert.ok(existsSync(join(dir, 'manual.html')));
     assert.ok(summary.agents.verifier.calls === 1);
-    // 共通部分に1回、ページごとに1回、載せ漏れの書き直しに1回
-    assert.equal(summary.agents.writer.calls, 3);
+    // 共通部分に1回、ページごとに1回、載せ漏れの書き直しに1回、定番の症状から挙がった困りごとの判断に1回
+    assert.equal(summary.agents.writer.calls, 4);
+    // 定番の症状の段：補足の事実で「相談されたことがある」症状を選び、追加で聞く。網羅は 20 問の聞き取りだけで測る
+    assert.deepEqual(summary.stages.common_symptoms.selected, ['CS-01', 'CS-02', 'CS-11']);
+    assert.equal(summary.stages.common_symptoms.asked.length, 3);
+    assert.equal(summary.stages.common_symptoms.interview_questions, 1);
+    assert.equal(summary.stages.common_symptoms.extra_questions, 4);
+    const outcomes = JSON.parse(readFileSync(join(dir, 'manual-final.json'), 'utf8')).common_symptoms.items;
+    assert.equal(outcomes.find((item) => item.id === 'CS-14').outcome, 'not_consulted');
+    assert.ok(readFileSync(join(dir, 'manual.html'), 'utf8').includes('<li>画面が映らない（モニター）</li>'));
     assert.ok(summary.leaks[0].found > 0);
     assert.equal(summary.leaks[0].remaining, 0);
     assert.equal(summary.before_leaving, 0);
@@ -300,10 +310,10 @@ test('通し：不合格なら指摘を Writer に渡して差し戻す', () =>
     assert.equal(summary.status, 'passed', summary.error);
     assert.equal(summary.resends, 1);
     const writers = client.sent.filter((p) => p.system.includes('Writer'));
-    // 指摘のあった部分だけを書き直す（載せ漏れの書き直しを含む）
-    assert.equal(writers.length, 4);
+    // 指摘のあった部分だけを書き直す（載せ漏れの書き直しと、定番の症状から挙がった困りごとの判断を含む）
+    assert.equal(writers.length, 5);
     assert.ok(!taggedIn(writers[0], 'task').revision);
-    assert.ok(taggedIn(writers[3], 'task').revision.findings.length);
+    assert.ok(taggedIn(writers[4], 'task').revision.findings.length);
     // 変わっていない文章は Verifier にかけ直さない
     const verifiers = client.sent.filter((p) => p.system.includes('Verifier'));
     assert.ok(taggedIn(verifiers[1], 'statements').statements.length < taggedIn(verifiers[0], 'statements').statements.length);
@@ -323,7 +333,7 @@ test('通し：差し戻しは最大2回で、合格しなければ HTML を作�
     const client = pipelineClient({ verdicts: ['dangerous', 'dangerous', 'dangerous', 'dangerous'] });
     const summary = await runPipeline({ set: 'okojo', setDir: SET, dir, client });
     assert.equal(summary.status, 'not_passed');
-    assert.equal(client.sent.filter((p) => p.system.includes('Writer')).length, 5);
+    assert.equal(client.sent.filter((p) => p.system.includes('Writer')).length, 6);
     assert.ok(!existsSync(join(dir, 'manual.html')));
     assert.ok(summary.unresolved.length > 0);
   }));

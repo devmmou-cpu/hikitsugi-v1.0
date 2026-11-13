@@ -1,0 +1,68 @@
+{
+  "$comment": "定番の症状の補足の事実（段 2 の模擬評価）。調整用の会社だけに置く。consulted が true は相談されたことがある症状、false は「ない」と答える症状",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "company",
+    "purpose",
+    "rules",
+    "facts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "company": {
+      "type": "string",
+      "minLength": 1
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "symptom",
+          "consulted",
+          "status",
+          "answer"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^F-\\d{2}$"
+          },
+          "symptom": {
+            "type": "string",
+            "pattern": "^CS-\\d{2}$"
+          },
+          "consulted": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "answered"
+            ]
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

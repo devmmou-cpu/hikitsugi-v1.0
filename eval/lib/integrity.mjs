@@ -1,7 +1,7 @@
 // 評価セットの整合性検査。API を使わず、データそのものの誤りを見つける。
 // 問題の一覧（文字列の配列）を返す。空なら合格。
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative, sep } from 'node:path';
 import { validate } from '../../plugin/lib/validate.mjs';
 import { buildTranscript } from './build-transcript.mjs';
@@ -123,6 +123,35 @@ function* walk(dir) {
 }
 
 /**
+ * 補足の事実の決まり（11/13 の本人の判断）：調整用の会社だけ。相談されたことがある症状 3〜4 件、ないと答える症状 2〜3 件、残りは事実なし。
+ * 事実の ID は模擬の田中さんの事実と重ねない。症状は承認済みの一覧にあるものだけ。認証情報を書かない。
+ */
+function commonFactProblems(common, info, facts, root) {
+  const problems = [];
+  if (info.split !== 'tuning') problems.push('定番の症状の補足の事実は、調整用の会社にだけ置きます');
+  const taken = new Set(facts.facts.map((fact) => fact.id));
+  const list = readJson(join(root, 'plugin/checklist/common-symptoms.json'));
+  const approved = new Set(list.symptoms.filter((symptom) => symptom.status === 'approved').map((symptom) => symptom.id));
+  const ids = common.facts.map((fact) => fact.id);
+  if (new Set(ids).size !== ids.length) problems.push('補足の事実の ID が重なっています');
+  for (const fact of common.facts) {
+    if (taken.has(fact.id)) problems.push(`補足の事実の ID が模擬の田中さんの事実と重なっています：${fact.id}`);
+    if (!approved.has(fact.symptom)) problems.push(`承認済みの一覧にない症状です：${fact.symptom}`);
+    if (CREDENTIAL_IN_TEXT.test(fact.answer)) problems.push(`補足の事実に認証情報らしい文があります：${fact.id}`);
+  }
+  const symptoms = common.facts.map((fact) => fact.symptom);
+  if (new Set(symptoms).size !== symptoms.length) problems.push('同じ症状の補足の事実が 2 件あります');
+  const consulted = common.facts.filter((fact) => fact.consulted).length;
+  const none = common.facts.length - consulted;
+  if (consulted < 3 || consulted > 4) problems.push(`相談されたことがある症状は 3〜4 件です（${consulted} 件）`);
+  if (none < 2 || none > 3) problems.push(`ないと答える症状は 2〜3 件です（${none} 件）`);
+  return problems;
+}
+
+// 補足の事実は保管場所の文も書かないので、パスワードの語と値の形があれば止める
+const CREDENTIAL_IN_TEXT = /(?:パスワード|暗証番号)(?:は|:|：|=)\s*[!-~]{4,}/;
+
+/**
  * @param setDir 評価セットのフォルダ
  * @param options.repoRoot 認証情報の検査で走査するリポジトリの根
  * @param options.checklistPath 必須項目のファイル
@@ -147,6 +176,10 @@ export function checkSet(setDir, { repoRoot, checklistPath, schemaRoot = repoRoo
     data[name] = readJson(join(setDir, file));
     for (const error of validate(schema(schemaFile), data[name])) problems.push(`形式 ${file} ${error}`);
   }
+  // 定番の症状の補足の事実（段 2）。あれば、会社 ID と、答えの文の語を検査する（説明の欄は項目名を書くので語の検査にかけない）
+  const commonPath = join(setDir, 'hidden/common_symptoms.json');
+  const common = existsSync(commonPath) ? readJson(commonPath) : null;
+  if (common) for (const error of validate(schema('eval/schemas/common-facts.schema.json'), common)) problems.push(`形式 hidden/common_symptoms.json ${error}`);
   const checklist = readJson(checklistPath);
   for (const error of validate(schema('plugin/schemas/checklist.schema.json'), checklist)) {
     problems.push(`形式 checklist ${error}`);
@@ -167,6 +200,12 @@ export function checkSet(setDir, { repoRoot, checklistPath, schemaRoot = repoRoo
   const identifiers = company === 'okojo' ? OKOJO_IDENTIFIERS : data.case.identifiers;
   if (!identifiers) problems.push('case.json に identifiers がありません');
   const wordPatterns = [...ALLOWED_WORD_PATTERNS, ...(identifiers ? identifierPatterns(identifiers) : [])];
+
+  // ---- 定番の症状の補足の事実 ----
+  if (common) {
+    if (common.company !== data.case.company) problems.push(`common_symptoms の会社 ID が違います: ${common.company}`);
+    problems.push(...commonFactProblems(common, data.case, data.facts, schemaRoot));
+  }
 
   // ---- 必須項目 ----
   const expectedChk = Array.from({ length: 40 }, (_, i) => `CHK-${String(i + 1).padStart(2, '0')}`);
@@ -321,7 +360,7 @@ export function checkSet(setDir, { repoRoot, checklistPath, schemaRoot = repoRoo
   }
 
   // ---- 架空性：英字の語 ----
-  const textSources = [...Object.values(data), checklist];
+  const textSources = [...Object.values(data), checklist, ...(common ? [common.facts.map((fact) => fact.answer)] : [])];
   for (const source of textSources) {
     for (const text of collectValues(source)) {
       for (const [word] of text.matchAll(WORD)) {

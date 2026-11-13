@@ -19,6 +19,8 @@ import { PC_FILE_LIMIT, writeWithinLimit } from '../plugin/lib/limits.mjs';
 import { clientOf, runGapFinderLive, runVerifierLive } from './lib/adapters/live.mjs';
 import { UsageError } from './lib/adapters/errors.mjs';
 import { runInterviewLive } from './lib/interview-loop.mjs';
+import { loadCommonFacts, runCommonSymptomsLive } from './lib/common-stage.mjs';
+import { commonSymptomsOf, COMMON_GAP } from '../plugin/lib/common-symptoms.mjs';
 import { loadAnswers, loadCase, loadHidden, loadInput, readJson } from './lib/load-set.mjs';
 import { maskCredentials } from './lib/runner.mjs';
 import * as gapsScorer from './lib/scorers/gaps.mjs';
@@ -52,6 +54,8 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
   // 正解と隠し設定は採点と模擬の田中さんにだけ使い、エージェントには渡さない
   const answers = loadAnswers(setDir);
   const hidden = loadHidden(setDir).facts;
+  // 定番の症状の補足の事実は、調整用の会社にだけある。20 問の聞き取りには渡さない
+  const commonFacts = loadCommonFacts(setDir);
   mkdirSync(dir, { recursive: true });
   const api = await clientOf(client);
 
@@ -97,8 +101,24 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
     const gaps = await once('gaps', 'gaps', () => runGapFinderLive({ survey, client: api, record }));
     summary.stages.gaps = gapsScorer.summarize(gapsScorer.score(gaps, answers.gaps, input));
 
-    const transcript = await once('transcript', 'transcript', () => runInterviewLive({ survey, gaps, hidden, client: api, record }));
-    summary.stages.interview = interviewScorer.summarize(interviewScorer.score(transcript, answers.gaps, { facts: hidden }), transcript);
+    const interview = await once('transcript', 'transcript', () => runInterviewLive({ survey, gaps, hidden, client: api, record }));
+    // 網羅は 20 問の聞き取りで測る。定番の症状の段は前の版になかったので、混ぜない
+    summary.stages.interview = interviewScorer.summarize(interviewScorer.score(interview, answers.gaps, { facts: hidden }), interview);
+
+    // 20 問のあとの、定番の症状の段（段 2）。選ぶ段と追加の質問は 20 問の外で数える
+    const commonRun = await once('common-symptoms', null, () => runCommonSymptomsLive({ transcript: interview, hidden, commonFacts, client: api, record }));
+    const transcript = schemaCheck('transcript', commonRun.transcript);
+    const commonState = commonRun.common;
+    summary.stages.common_symptoms = {
+      supplement: Boolean(commonFacts),
+      selected: commonState.selected,
+      asked: commonState.asked.map(({ id, status }) => ({ id, status })),
+      covered: commonState.covered.map(({ id }) => id),
+      over: commonState.over,
+      unknown: commonState.unknown,
+      interview_questions: interview.entries.length,
+      extra_questions: transcript.entries.filter((entry) => entry.gap === COMMON_GAP).length,
+    };
 
     const context = { survey, transcript };
     let revision;
@@ -112,7 +132,7 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
         set: (name, value) => save(`writer-${round}-${name}`, value),
       };
       const written = await once(`manual-${round}-writer`, 'manual', () =>
-        runWriterLive({ survey, transcript, companyName: info.name, retiree: RETIREE, revision, client: api, record, store: pieces, onLeaks: (leaks) => { summary.leaks.push({ round, ...leaks }); }, onSymptoms: (symptoms) => { summary.symptoms.push({ round, ...symptoms }); } }),
+        runWriterLive({ survey, transcript, companyName: info.name, retiree: RETIREE, revision, client: api, record, store: pieces, commonSymptoms: commonState, onLeaks: (leaks) => { summary.leaks.push({ round, ...leaks }); }, onSymptoms: (symptoms) => { summary.symptoms.push({ round, ...symptoms }); } }),
       );
       const edited = await once(`manual-${round}-editor`, null, () => {
         // 差し戻しでは合格済みの用語の説明を引き継ぎ、変わった文章だけを直す
@@ -142,7 +162,8 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
       if (result.passed) {
         // 模擬評価。実際の /hikitsugi:start では、前任者がページごとに確認する
         const phrases = await once('search-index', null, () => runPhraseWriterLive({ manual, retiree: RETIREE, client: api, record }));
-        const reviewed = withSearchIndex(markReviewed(manual, RETIREE, survey.as_of), phrases);
+        const common = commonSymptomsOf(commonState);
+        const reviewed = { ...withSearchIndex(markReviewed(manual, RETIREE, survey.as_of), phrases), ...(common ? { common_symptoms: common } : {}) };
         summary.search_phrases = reviewed.search_index.reduce((sum, entry) => sum + entry.phrases.length, 0);
         save('manual-final', reviewed);
         summary.review = { mode: '模擬（全ページ このままでよい）', pages: reviewed.symptom_pages.length };
