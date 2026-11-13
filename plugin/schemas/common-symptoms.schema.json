@@ -1,0 +1,78 @@
+{
+  "$comment": "定番の症状の一覧。本人が承認したもの（approved）だけを聞き取りに出す。words は手順ページの題名や回答と照らす語、parts は補える手順部品の並び（procedures.json の sequences の id）",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "symptoms"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "$comment": {
+      "type": "string"
+    },
+    "symptoms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "label",
+          "words",
+          "parts",
+          "status",
+          "reviewed_by",
+          "reviewed_on"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^CS-\\d{2}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "words": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "approved"
+            ]
+          },
+          "reviewed_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewed_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          }
+        }
+      }
+    }
+  }
+}

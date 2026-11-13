@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "$comment": "定番の症状の一覧。聞き取りの 20 問のあとに番号つきで出し、相談されたことがあるものを選んでもらう。手順部品と同じく、本人が承認したもの（status が approved）だけを使う。文面の変更と承認は本人の確認があったときだけ（11/13 に本人が案のとおり承認）",
+  "symptoms": [
+    {
+      "id": "CS-01",
+      "label": "印刷できない",
+      "words": [
+        "印刷",
+        "プリンター"
+      ],
+      "parts": [],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-02",
+      "label": "PC が遅い・固まる",
+      "words": [
+        "遅い",
+        "固まる",
+        "固まった",
+        "フリーズ"
+      ],
+      "parts": [
+        "restart"
+      ],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-03",
+      "label": "PC の電源が入らない・起動しない",
+      "words": [
+        "電源が入らない",
+        "起動しない",
+        "立ち上がらない"
+      ],
+      "parts": [],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-04",
+      "label": "全社でネットがつながらない",
+      "words": [
+        "ネット",
+        "インターネット",
+        "回線"
+      ],
+      "parts": [],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-05",
+      "label": "Wi-Fi が切れる・つながらない",
+      "words": [
+        "Wi-Fi",
+        "無線"
+      ],
+      "parts": [
+        "wifi"
+      ],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-06",
+      "label": "共有フォルダが見えない・開けない",
+      "words": [
+        "共有フォルダ"
+      ],
+      "parts": [
+        "network-drive"
+      ],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-07",
+      "label": "メールが送れない・届かない",
+      "words": [
+        "メールが送れない",
+        "メールが届かない",
+        "送信できない",
+        "受信できない"
+      ],
+      "parts": [],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-08",
+      "label": "パスワードを忘れた・ログインできない",
+      "words": [
+        "パスワードを忘れ",
+        "ログインできない",
+        "サインインできない"
+      ],
+      "parts": [],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-09",
+      "label": "不審なメールが来た・開いてしまった",
+      "words": [
+        "不審",
+        "怪しい",
+        "迷惑メール"
+      ],
+      "parts": [],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-10",
+      "label": "ウイルスに感染したかもしれない",
+      "words": [
+        "ウイルス",
+        "感染"
+      ],
+      "parts": [
+        "wifi-off"
+      ],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-11",
+      "label": "ファイルを消した・上書きした",
+      "words": [
+        "消した",
+        "消してしまった",
+        "上書き",
+        "復元"
+      ],
+      "parts": [],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-12",
+      "label": "OneDrive の同期が止まった",
+      "words": [
+        "OneDrive",
+        "同期"
+      ],
+      "parts": [
+        "onedrive-resume"
+      ],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-13",
+      "label": "Teams の会議で音が出ない・映らない",
+      "words": [
+        "Teams"
+      ],
+      "parts": [],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-14",
+      "label": "画面が映らない（モニター）",
+      "words": [
+        "画面が映らない",
+        "モニター",
+        "ディスプレイ"
+      ],
+      "parts": [],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    },
+    {
+      "id": "CS-15",
+      "label": "スキャンした書類が届かない",
+      "words": [
+        "スキャン"
+      ],
+      "parts": [],
+      "status": "approved",
+      "reviewed_by": "Okojyo-Soft",
+      "reviewed_on": "2026-11-13"
+    }
+  ]
+}
