@@ -20,6 +20,7 @@ import { plainProblems } from '../lib/plain-check.mjs';
 import { pagesForPhrases, phraseProblems, withSearchIndex } from '../lib/search-index.mjs';
 import { applyRetireeCheck } from '../lib/retiree-check.mjs';
 import { composeProcedures, libraryForAgents } from '../lib/procedures.mjs';
+import { approvedSymptoms, COMMON_GAP, commonSymptomsOf, commonUnknownLines, followupQuestion, nextFollowup, recordFollowup, recordSelection, selectionEvidenceProblems, selectionQuestion } from '../lib/common-symptoms.mjs';
 import { appendEntry, appendReviewEntry, checkNextQuestion, emptyTranscript, interviewProgress, QUESTION_LIMIT, REVIEW_GAP } from '../lib/transcript.mjs';
 import { validate } from '../lib/validate.mjs';
 import { renderManual } from '../renderer/render.mjs';
@@ -78,6 +79,10 @@ export function nextStep(work) {
     if (!isChecked(work, 'gaps.json')) return { step: 'gap-finder', unchecked: true };
     const count = has('transcript.json') ? readJson(join(work, 'transcript.json')).entries.length : 0;
     return { step: 'interview', asked: count, limit: QUESTION_LIMIT, pending_question: has('next.json') };
+  }
+  // 20 問のあとの、定番の症状の選ぶ段と追加の質問
+  if (state.common && state.common.stage !== 'done') {
+    return state.common.stage === 'select' ? { step: 'common-symptoms', stage: 'select' } : { step: 'common-symptoms', stage: 'followup', asked: state.common.asked.length, left: state.common.ask.length - state.common.asked.length };
   }
   const round = state.round ?? 1;
   if (!has(`manual-${round}.json`)) {
@@ -160,9 +165,11 @@ function checkNext(work) {
   if (next.action === 'finish' && unfinished.length) throw new Problem(unfinished.join('\n'));
   if (next.action === 'finish' || transcript.entries.length >= QUESTION_LIMIT) {
     const state = readJson(join(work, 'state.json'));
-    writeJson(join(work, 'state.json'), { ...state, interview_done: true });
+    // 承認済みの定番の症状があれば、続けて選ぶ段に進む
+    const common = approvedSymptoms().length ? { common: { stage: 'select' } } : {};
+    writeJson(join(work, 'state.json'), { ...state, interview_done: true, ...common });
     rmNext(work);
-    return `聞き取りを終えました（${transcript.entries.length} 問）`;
+    return `聞き取りを終えました（${transcript.entries.length} 問）${common.common ? '。続けて、定番の症状を選んでもらいます' : ''}`;
   }
   if (unfinished.length) throw new Problem(unfinished.join('\n'));
   return next.question;
@@ -188,6 +195,73 @@ function record(work, [status], stdin) {
   return `記録しました（${updated.entries.length} / ${QUESTION_LIMIT} 問）`;
 }
 const rmNext = (work) => rmSync(join(work, 'next.json'), { force: true });
+
+// ---- 定番の症状（20 問の外） ----
+function commonState(work, stage) {
+  const state = readJson(join(work, 'state.json'));
+  if (state.common?.stage !== stage) throw new Problem(stage === 'select' ? '定番の症状を選ぶ段階ではありません' : '定番の症状の追加の質問をする段階ではありません');
+  return state;
+}
+
+function saveTranscript(work, transcript) {
+  checkSchema('transcript', transcript);
+  writeJson(join(work, 'transcript.json'), transcript);
+}
+
+/** 選ぶ段の質問。番号つきの一覧を文で出す。 */
+function commonList(work) {
+  commonState(work, 'select');
+  return selectionQuestion();
+}
+
+/** 選ぶ段の答えを記録する。番号は標準入力で受け取る。「分からない」は common-select unknown。 */
+function commonSelect(work, [status = 'answered'], stdin) {
+  if (!['answered', 'unknown'].includes(status)) throw new UsageError('使い方：common-select [unknown]（番号は標準入力）');
+  const state = commonState(work, 'select');
+  const symptoms = approvedSymptoms();
+  let result;
+  try {
+    result = recordSelection(readJson(join(work, 'transcript.json')), { answer: stdin.trim(), status, answeredAt: new Date().toISOString() }, symptoms);
+  } catch (error) {
+    throw new Problem(error.message);
+  }
+  if (result.problems.length) throw new Problem(result.problems.join('\n'));
+  saveTranscript(work, result.transcript);
+  writeJson(join(work, 'state.json'), { ...state, common: result.common });
+  const { common, entry } = result;
+  if (common.unknown) return `記録しました（${entry.id}）。定番の症状は「まだ分かっていないこと」に 1 行で載せます`;
+  const label = (id) => symptoms.find((symptom) => symptom.id === id).label;
+  return [
+    `記録しました（${entry.id}）。相談されたことがある症状：${common.selected.length ? common.selected.map(label).join('、') : 'なし'}`,
+    ...(common.covered.length ? [`聞き取りで答えがあったので、追加では聞かない症状：${common.covered.map(({ id }) => label(id)).join('、')}`] : []),
+    ...(common.over.length ? [`追加の質問は ${common.ask.length} 問までなので、聞かない症状：${common.over.map(label).join('、')}（「まだ分かっていないこと」に載せます）`] : []),
+    `追加の質問：${common.ask.length} 問`,
+  ].join('\n');
+}
+
+/** 次の追加の質問。 */
+function commonNext(work) {
+  const { common } = commonState(work, 'followup');
+  return followupQuestion(nextFollowup(common));
+}
+
+/** 追加の質問の答えを記録する。回答は標準入力。 */
+function commonRecord(work, [status], stdin) {
+  if (!['answered', 'unknown', 'later'].includes(status)) throw new UsageError('使い方：common-record <answered|unknown|later>（回答は標準入力）');
+  const state = commonState(work, 'followup');
+  const answer = stdin.trim() || { unknown: '分かりません。', later: 'あとで調べます。' }[status];
+  if (!answer) throw new Problem('回答が空です');
+  let result;
+  try {
+    result = recordFollowup(readJson(join(work, 'transcript.json')), state.common, { answer, status, answeredAt: new Date().toISOString() });
+  } catch (error) {
+    throw new Problem(error.message);
+  }
+  saveTranscript(work, result.transcript);
+  writeJson(join(work, 'state.json'), { ...state, common: result.common });
+  const { asked, ask, stage } = result.common;
+  return `記録しました（${result.entry.id}、追加 ${asked.length} / ${ask.length} 問）${stage === 'done' ? '。定番の症状の聞き取りを終えました' : ''}`;
+}
 
 const contactsForPages = (statements, contacts) => {
   const text = new Map(statements.map((statement) => [statement.id, statement.text]));
@@ -335,6 +409,8 @@ function checkWriter(work, [round, part]) {
       checked.problems.push(...deadEndFixProblems(checked.output.statements, part, Number(round) > state.round_base + 1 ? rest : deadEndFix));
     }
   }
+  // 定番の症状を選んだ答えは、どの文の根拠にもしない
+  checked.problems.push(...selectionEvidenceProblems(checked.output.statements ?? [], state.common));
   if (checked.problems.length) throw new Problem(`手順部品の指定やページの形に問題があります：\n${checked.problems.join('\n')}`);
   writeJson(path, checked.output);
   const warnings = checked.warnings?.length ? `\n${checked.warnings.join('\n')}` : '';
@@ -420,7 +496,7 @@ function assembleRound(work, round) {
   // 手順ページのない困りごとは、最初の版で1回だけ Writer に判断してもらう。足したページがなければ止める
   if (round === 1 && !state.update) {
     if (!state.symptom_gaps) {
-      const gaps = symptomGaps(manual, sources.transcript, state.retiree);
+      const gaps = symptomGaps(manual, sources.transcript, state.retiree, state.common);
       if (gaps.length) {
         writeJson(join(work, 'state.json'), { ...readJson(join(work, 'state.json')), symptom_gaps: gaps });
         return `手順ページのない困りごとが ${gaps.length} 件あります。ページにするか外すかを Writer に答えてもらいます`;
@@ -1113,27 +1189,34 @@ function runSummary(work, state, manual) {
   const gapsPath = join(work, 'gaps.json');
   const transcriptPath = join(work, 'transcript.json');
   if (!existsSync(gapsPath) || !existsSync(transcriptPath)) return null;
-  const questions = readJson(transcriptPath).entries.filter((entry) => entry.gap !== REVIEW_GAP).length;
+  const entries = readJson(transcriptPath).entries;
+  // 定番の症状の選ぶ段と追加の質問は、20 問とは別に数える
+  const questions = entries.filter((entry) => entry.gap !== REVIEW_GAP && entry.gap !== COMMON_GAP).length;
+  const followups = entries.filter((entry) => entry.gap === COMMON_GAP).length - (state.common?.selection ? 1 : 0);
   // 差し戻しは、Verifier が指摘を出した回。前の回から引き継いだ結果に指摘は残らない
   const flagged = readdirSync(work)
     .filter((name) => /^verification-\d+\.json$/.test(name))
     .map((name) => new Set(readJson(join(work, name)).results.filter((result) => result.verdict !== 'correct').map((result) => result.statement)).size)
     .filter(Boolean);
   const reviewed = Object.values(state.review?.pages ?? {}).filter((answer) => answer === 'ok').length;
-  return `空白 ${readJson(gapsPath).gaps.length} 件 → 質問 ${questions} 問 → 書いたページ ${manual.symptom_pages.length} → 差し戻し ${flagged.length} 回（${flagged.reduce((sum, count) => sum + count, 0)} 文）→ 確認 ${reviewed} ページ`;
+  return `空白 ${readJson(gapsPath).gaps.length} 件 → 質問 ${questions} 問${state.common?.selection ? `（ほかに定番の症状の選択 1 回、追加 ${followups} 問）` : ''} → 書いたページ ${manual.symptom_pages.length} → 差し戻し ${flagged.length} 回（${flagged.reduce((sum, count) => sum + count, 0)} 文）→ 確認 ${reviewed} ページ`;
 }
 
 function render(work, [outPath]) {
   const state = readJson(join(work, 'state.json'));
   if (!state.passed) throw new Problem('Verifier が合格していないので、取扱説明書を作れません');
   let prepared;
+  // 定番の症状の結果は、作業フォルダの state.json から manual.json へ移す。manual.json から戻したときは、そこにあるものを使う
+  const final = readJson(join(work, 'manual-final.json'));
+  const common = final.common_symptoms ?? commonSymptomsOf(state.common);
   try {
-    prepared = prepareForRender(readJson(join(work, 'manual-final.json')));
+    prepared = prepareForRender(common ? { ...final, common_symptoms: common } : final);
   } catch (error) {
     if (error instanceof UnapprovedPartsError) throw new Problem(error.message);
     throw error;
   }
-  const { manual, omitted, updatedParts, rebuiltCount } = prepared;
+  const { omitted, updatedParts, rebuiltCount } = prepared;
+  const manual = common ? { ...prepared.manual, common_symptoms: common } : prepared.manual;
   const target = resolve(outPath ?? (state.output_dir ? join(state.output_dir, 'manual.html') : join(work, 'manual.html')));
   const transcriptPath = join(work, 'transcript.json');
   // 文の根拠の聞き取りが記録にないまま完成させない
@@ -1142,7 +1225,7 @@ function render(work, [outPath]) {
     const missing = missingInterviewEvidence(manual, readJson(transcriptPath)).filter((id) => !omitted.has(id));
     if (missing.length) throw new Problem(`聞き取りの記録にない根拠があります：${missing.slice(0, 5).join('、')}`);
   }
-  const unknowns = unknownsOf(work, state);
+  const unknowns = [...new Set([...unknownsOf(work, state), ...commonUnknownLines(manual)])];
   const html = renderManual(manual, { unknowns });
   if (writeWithinLimit(target, html, PC_FILE_LIMIT)) throw new Problem(oversizeMessage(target, html, PC_FILE_LIMIT));
   if (target !== resolve(join(work, 'manual.html'))) writeWithinLimit(join(work, 'manual.html'), html, PC_FILE_LIMIT);
@@ -1178,6 +1261,10 @@ const COMMANDS = {
   'check-gaps': checkGaps,
   'check-next': checkNext,
   record,
+  'common-list': commonList,
+  'common-select': commonSelect,
+  'common-next': commonNext,
+  'common-record': commonRecord,
   'writer-task': writerTask,
   'check-writer': checkWriter,
   'merge-edits': mergeEdits,

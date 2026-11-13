@@ -178,6 +178,9 @@ const pieces = () => {
 /** 手順ページのない困りごとへの偽の応答。すべて外す。 */
 const excludeAll = (task) => ({ decisions: task.gaps.map(({ id }) => ({ gap: id, decision: 'exclude', reason: 'テストの理由', category: 'other', symptom: '' })) });
 
+// 偽の聞き取りは 1 問なので、INT-002 は定番の症状を選んだ記録になる。選んだ答えは根拠にできないので、見本の文の根拠を別の番号にする
+const noSelection = (piece) => JSON.parse(JSON.stringify(piece).replaceAll('"INT-002"', '"INT-018"'));
+
 /** 載せ漏れの書き直しの偽の応答。足りない事実を機器として足す。 */
 const fillMissing = (previous, missing) => {
   const out = JSON.parse(JSON.stringify(previous));
@@ -388,7 +391,10 @@ test('/hikitsugi:start：段階をたどって取扱説明書まで進み、途�
     write('next.json', { action: 'finish', gap: '', covers: [], question: '', unfilled: [] });
     assert.throws(() => hikitsugi('check-next'), /まだ聞いていない/);
     write('gaps.json', { schema_version: 1, company: input.survey.company, coverage, gaps: [{ id: 'GAP-001', items: ['CHK-01', 'CHK-02'], why: '理由', priority: 'high', question_hint: 'ヒント' }] });
-    assert.match(hikitsugi('check-next'), /終えました/);
+    assert.match(hikitsugi('check-next'), /終えました（\d+ 問）。続けて、定番の症状を選んでもらいます/);
+    // 20 問のあとに定番の症状を選ぶ段がある（段 2）。ここでは「なし」
+    assert.deepEqual(nextStep(work), { step: 'common-symptoms', stage: 'select' });
+    assert.match(hikitsugi('common-select', [], 'なし'), /相談されたことがある症状：なし/);
     // 共通部分、ページの順に、1回に1つずつ書く
     assert.deepEqual(nextStep(work), { step: 'writer', round: 1, part: 'common' });
     hikitsugi('writer-task', ['1', 'common']);
@@ -1255,10 +1261,11 @@ test('/hikitsugi:start：手順ページのない困りごとを Writer に聞�
     write('gaps.json', { schema_version: 1, company: input.survey.company, coverage, gaps: [{ id: 'GAP-001', items: ['CHK-37'], why: '理由', priority: 'high', question_hint: 'ヒント' }] });
     write('next.json', { action: 'finish', gap: '', covers: [], question: '', unfilled: [] });
     hikitsugi('check-next');
+    hikitsugi('common-select', [], 'なし');
 
-    write('writer-1-common.json', pieces().common);
+    write('writer-1-common.json', noSelection(pieces().common));
     hikitsugi('check-writer', ['1', 'common']);
-    write('writer-1-T1.json', pieces().page);
+    write('writer-1-T1.json', noSelection(pieces().page));
     hikitsugi('check-writer', ['1', 'T1']);
     hikitsugi('writer-task', ['1', 'common']);
     const leakTask = read('writer-task.json');
@@ -1301,7 +1308,7 @@ test('/hikitsugi:start：手順ページのない困りごとを Writer に聞�
     const pageTask = read('writer-task.json');
     assert.deepEqual(pageTask.basis.sources, ['INT-001']);
     assert.match(pageTask.basis.detail, /ディスクの交換/);
-    const page = pieces().page;
+    const page = noSelection(pieces().page);
     write('writer-1-T2.json', page);
     assert.throws(() => hikitsugi('check-writer', ['1', 'T2']), /根拠に INT-001/);
     page.statements[0].evidence = [...page.statements[0].evidence, 'INT-001'];

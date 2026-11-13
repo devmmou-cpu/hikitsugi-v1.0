@@ -156,6 +156,18 @@ export function appendReviewEntry(transcript, { pageId, title, comment, answered
   return { transcript: { ...transcript, entries: [...transcript.entries, entry] }, entry };
 }
 
+/**
+ * 定番の症状の選ぶ段と追加の質問を、聞き取りの記録に足す。質問の上限（20 問）は数えない。
+ * 番号は最大の番号から続ける。
+ */
+export function appendExtraEntry(transcript, { gap, covers, question, answer, status, answeredAt }) {
+  if (!answer.trim()) throw new Error('回答が空です');
+  if (hasCredential(answer)) throw new Error('回答にパスワードの本体が含まれています。保管場所だけを記録してください');
+  const number = String(Math.max(0, ...transcript.entries.map((item) => Number(item.id.slice(4)))) + 1).padStart(3, '0');
+  const entry = { id: `INT-${number}`, gap, covers, question, answer: answer.trim(), status, answered_at: answeredAt };
+  return { transcript: { ...transcript, entries: [...transcript.entries, entry] }, entry };
+}
+
 /** 文の根拠のうち、聞き取りの記録にない INT を返す。 */
 export function missingInterviewEvidence(manual, transcript) {
   const known = new Set(transcript.entries.map((entry) => entry.id));

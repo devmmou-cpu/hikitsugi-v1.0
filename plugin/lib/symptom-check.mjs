@@ -3,6 +3,7 @@
 // /hikitsugi:start と評価の両方で使う。
 
 import { hasCredential } from './transcript.mjs';
+import { approvedSymptoms, COMMON_GAP } from './common-symptoms.mjs';
 
 // 困りごと（症状、故障、対応先）を聞く項目
 const TROUBLE_ITEMS = new Set(['CHK-02', 'CHK-04', 'CHK-09', 'CHK-14', 'CHK-15', 'CHK-18', 'CHK-22', 'CHK-27', 'CHK-32', 'CHK-33', 'CHK-37', 'CHK-38']);
@@ -28,13 +29,15 @@ export function topicWords(sentence, names) {
  * 題名に同じ語があるページは、同じ話として数える。機器の欄や本文に書いてあっても、後任は症状から探すので数えない。
  * @returns { id, sources, detail }[]
  */
-export function symptomGaps(manual, transcript, retiree = '') {
+export function symptomGaps(manual, transcript, retiree = '', common = null, symptoms = approvedSymptoms()) {
   const text = new Map(manual.statements.map((statement) => [statement.id, statement.text]));
   const titles = manual.symptom_pages.map((page) => compact(text.get(page.title) ?? ''));
   const names = [...manual.contacts.map((contact) => contact.name), retiree.replace(/さん$/, '')].filter(Boolean);
   const answered = transcript.entries.filter((entry) => entry.status === 'answered');
   const found = new Map();
   for (const entry of answered) {
+    // 定番の症状の選ぶ段と追加の質問は、下でまとめて扱う
+    if (entry.gap === COMMON_GAP) continue;
     if (!entry.covers.some((item) => TROUBLE_ITEMS.has(item))) continue;
     // 主語が前の文にある短い文は、前の文の語で照合する
     let topic = [];
@@ -48,11 +51,20 @@ export function symptomGaps(manual, transcript, retiree = '') {
       found.set(compact(sentence), sentence);
     }
   }
-  return [...found].map(([key, detail], index) => ({
-    id: `SYM-${index + 1}`,
-    sources: answered.filter((entry) => compact(entry.answer).includes(key)).map((entry) => entry.id),
+  const gaps = [...found].map(([key, detail]) => ({
+    sources: answered.filter((entry) => entry.gap !== COMMON_GAP && compact(entry.answer).includes(key)).map((entry) => entry.id),
     detail,
   }));
+  // 定番の症状で、相談されたことがあると選ばれ、追加の質問に答えがあったもの。題名に症状の語があるページがなければ挙げる
+  const byId = new Map(answered.map((entry) => [entry.id, entry]));
+  for (const { id, evidence } of common?.asked ?? []) {
+    const entry = byId.get(evidence);
+    const symptom = symptoms.find((candidate) => candidate.id === id);
+    if (!entry || !symptom) continue;
+    if (symptom.words.some((word) => titles.some((title) => title.includes(compact(word))))) continue;
+    gaps.push({ sources: [entry.id], detail: `定番の症状「${symptom.label}」：${entry.answer}` });
+  }
+  return gaps.map((gap, index) => ({ id: `SYM-${index + 1}`, ...gap }));
 }
 
 /** 外す理由に書かれた、今あるページの ID。 */

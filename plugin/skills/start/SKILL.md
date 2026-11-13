@@ -71,6 +71,20 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikitsugi.mjs" <コマンド>
    ```
    「分からない」は `hikitsugi record unknown < /dev/null`、「あとで調べる」は `hikitsugi record later < /dev/null` です。
 
+### common-symptoms
+20 問のあとに、定番の症状を聞きます。20 問とは別に数えます。`status` の `stage` で進めます。
+
+- `stage` が `select` のとき：`hikitsugi common-list` が出した番号つきの一覧を、文のまま見せます（AskUserQuestion は使いません。選択肢が多いためです）。「相談されたことがあるものの番号を、『1、4』のように書いてください。ひとつもなければ『なし』と書いてください」と伝え、答えを標準入力で渡します。
+  ```
+  hikitsugi common-select <<'EOF_ANSWER'
+  （答えの文）
+  EOF_ANSWER
+  ```
+  「分からない」と言われたら `hikitsugi common-select unknown < /dev/null` です。問題が表示されたら、その内容を伝えて答え直してもらいます。記録したあとに表示された行（相談されたことがある症状など）を、そのまま伝えます。
+- `stage` が `followup` のとき：`hikitsugi common-next` が出した質問を、interview と同じく AskUserQuestion で聞きます（選択肢は「分からない」と「あとで調べる」）。何問目か（`asked` と `left`）も伝えます。答えは `hikitsugi common-record answered`（標準入力）、`hikitsugi common-record unknown < /dev/null`、`hikitsugi common-record later < /dev/null` で記録します。
+
+選ばれなかった症状は手順のページにしません。説明書の「当てはまる症状がないとき」に題名だけが並びます。
+
 ### writer
 Writer は1回に1つの部分だけを書きます。`status` の `round` と `part` を使います。`part` は `common`（連絡先や手順ページの一覧など）か、手順ページの ID（`T1` など）か、`symptoms`（手順ページのない困りごとを、ページにするか外すかの判断）です。
 

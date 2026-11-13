@@ -50,6 +50,29 @@
         }
       }
     },
+    "common_symptoms": {
+      "$comment": "定番の症状の選ぶ段の結果（段 2）。selection は選ぶ段の答えの INT。outcome は consulted（追加で聞いた）、covered（20 問の答えにあった）、not_asked（選んだが上限で聞けなかった）、not_consulted（相談を受けたことがない）。not_consulted の題名は「当てはまる症状がないとき」に並べる。前の版の説明書にはない",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selection", "unknown", "items"],
+      "properties": {
+        "selection": { "type": "string", "pattern": "^INT-\\d{3}$" },
+        "unknown": { "type": "boolean" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "outcome", "evidence"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^CS-\\d{2}$" },
+              "outcome": { "enum": ["consulted", "covered", "not_asked", "not_consulted"] },
+              "evidence": { "type": "string", "pattern": "^INT-\\d{3}$" }
+            }
+          }
+        }
+      }
+    },
     "symptom_exclusions": {
       "$comment": "聞き取りに困りごとの答えがあるが、Writer が理由を付けて手順ページにしなかったもの。後任向けの画面には出さない。pages は理由に書かれた受け皿のページで、普段の言い方の索引に足す",
       "type": "array",

@@ -17,6 +17,11 @@ import { forDisplay } from '../lib/display.mjs';
 import { callScriptProblems, replyProblems } from '../lib/reply.mjs';
 import { firstStepFigures } from '../lib/figures.mjs';
 import { latestUpdateOf, UPDATE_KIND_LABELS } from '../lib/update.mjs';
+import { notConsultedLabels } from '../lib/common-symptoms.mjs';
+
+// 定番の症状のうち、前任者が相談を受けたことがないと答えたもの。手順は書かず、題名と行き先だけを出す（段 2）
+export const NO_PAGE_HEADING = '手順のページがない症状';
+export const NO_PAGE_NOTE = '前任者が、社員から相談を受けたことがないと答えた症状です。この説明書に手順のページはありません。困ったときは「まず社内に相談」の相手に聞いてください。';
 
 const SCHEMA = JSON.parse(readFileSync(new URL('../schemas/manual.schema.json', import.meta.url), 'utf8'));
 
@@ -478,7 +483,9 @@ function helpPanel(ctx) {
   const lists = groups.map(([category, label, pages]) => `<h3 class="group-title" id="cat-${category}">${esc(label)}</h3>\n<ul class="sym-group" role="list">\n${pages.map((page) => symHtml(ctx, page)).join('\n')}\n</ul>`);
   // 一覧に当てはまらないときの行き先を、必ず残す。社内の相談先は連絡先の先頭にある
   const noMatch = `<ul class="sym-group sym-group-last" role="list"><li><a class="sym tap" href="#tab-contacts"><span class="sym-title">当てはまる症状がないとき</span><span class="sym-meta">${badgeHtml('internal')}</span>${icon('next', 'chev')}</a></li></ul>`;
-  return [`<section id="tab-help" class="panel col-list">`, `<h2 tabindex="-1">${SCREEN_TITLE_HELP}</h2>`, searchBox, lead, jump, ...lists, noMatch, '</section>'].filter(Boolean).join('\n');
+  const labels = notConsultedLabels(ctx.manual);
+  const noPage = labels.length ? `<section class="unknowns" id="help-no-page"><h3 class="section-title">${NO_PAGE_HEADING}</h3>\n<p class="note">${esc(NO_PAGE_NOTE)}</p>\n<ul role="list">\n${labels.map((label) => `<li>${esc(label)}</li>`).join('\n')}\n</ul></section>` : '';
+  return [`<section id="tab-help" class="panel col-list">`, `<h2 tabindex="-1">${SCREEN_TITLE_HELP}</h2>`, searchBox, lead, jump, ...lists, noMatch, noPage, '</section>'].filter(Boolean).join('\n');
 }
 
 /** 開いた直後の中央の「まず誰に言うか」。社内の相談先の先頭を1枚だけ置く。 */

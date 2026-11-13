@@ -19,7 +19,8 @@ import { pathToFileURL } from 'node:url';
 import { fileSize, oversizeMessage, PHONE_FILE_LIMIT, writeWithinLimit } from '../lib/limits.mjs';
 import { contactProblems, pageProblems } from '../lib/page-check.mjs';
 import { firstStepFigures } from '../lib/figures.mjs';
-import { MEMO_NO_JS, actionHtml, contactGuide, hoursIconName, BADGE_ICONS, BADGE_LABELS, CATEGORY_LABELS, checkInput, compactCss, esc, evidenceLines, ICONS, infoTables, makeContext, pageTerms, stepParts, telHtml } from './render.mjs';
+import { notConsultedLabels } from '../lib/common-symptoms.mjs';
+import { NO_PAGE_HEADING, NO_PAGE_NOTE, MEMO_NO_JS, actionHtml, contactGuide, hoursIconName, BADGE_ICONS, BADGE_LABELS, CATEGORY_LABELS, checkInput, compactCss, esc, evidenceLines, ICONS, infoTables, makeContext, pageTerms, stepParts, telHtml } from './render.mjs';
 import { STYLES } from './styles.mjs';
 
 const SYMPTOM_NAME_MAX = 30;
@@ -216,7 +217,7 @@ function symptomHtml(ctx, page, fileTitle) {
 }
 
 /** 連絡先の一覧。まず誰に言うかの順に、社内の相談先を先に並べる。 */
-function contactsHtml(ctx, heading, lead, fileTitle, guide) {
+function contactsHtml(ctx, heading, lead, fileTitle, guide, extra = '') {
   const { contacts } = ctx.manual;
   const inside = contacts.filter((c) => c.id.startsWith('INH-'));
   const vendors = contacts.filter((c) => !c.id.startsWith('INH-'));
@@ -228,11 +229,18 @@ function contactsHtml(ctx, heading, lead, fileTitle, guide) {
     `<h1>${heading}</h1>`,
     `<p class="verdict-text">${lead}</p>`,
     ...(guide ? [`<p class="note">${guide}</p>`] : []),
+    extra,
     inside.length ? `<section class="part">\n<h2>まず社内に相談</h2>\n${inside.map(card).join('\n')}\n</section>` : '',
     vendors.length ? `<section class="part">\n<h2>業者</h2>\n${vendors.map(card).join('\n')}\n</section>` : '',
     contacts.length ? MEMO_NO_JS : '<p>連絡先は、まだこの説明書に入っていません。</p>',
   ].filter(Boolean).join('\n');
   return documentHtml(ctx, fileTitle, body);
+}
+
+/** 前任者が相談を受けたことがないと答えた定番の症状。題名と行き先だけを出す（段 2）。 */
+function noPageHtml(manual) {
+  const labels = notConsultedLabels(manual);
+  return labels.length ? `<section class="part">\n<h2>${NO_PAGE_HEADING}</h2>\n<p>${esc(NO_PAGE_NOTE)}</p>\n<ul>\n${labels.map((label) => `<li>${esc(label)}</li>`).join('\n')}\n</ul>\n</section>` : '';
 }
 
 /** 1ファイルの形の問題を返す。外へ出ない、ほかへ飛ばない。 */
@@ -269,7 +277,7 @@ export function renderPhoneBundle(input) {
       const title = ctx.raw(page.title);
       return { name: phoneFileName(index + 1, page.badge.value, title), html: symptomHtml(ctx, page, title) };
     }),
-    { name: '99 当てはまる症状がないとき.html', html: contactsHtml(ctx, '当てはまる症状がないとき', '次の相手に、困っていることをそのまま伝えてください。', '当てはまる症状がないとき') },
+    { name: '99 当てはまる症状がないとき.html', html: contactsHtml(ctx, '当てはまる症状がないとき', '次の相手に、困っていることをそのまま伝えてください。', '当てはまる症状がないとき', undefined, noPageHtml(manual)) },
   ];
   const problems = bundle.flatMap(({ name, html }) => phoneShapeProblems(html).map((problem) => `${name}: ${problem}`));
   if (problems.length) throw new Error(`スマホ向けのファイルに問題があります:\n${problems.map((p) => `- ${p}`).join('\n')}`);
