@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { loadInput } from '../eval/lib/load-set.mjs';
-import { checkCommon, checkContact } from '../plugin/lib/assemble.mjs';
+import { checkCommon, checkContact, credentialNoneProblems, writerFormat } from '../plugin/lib/assemble.mjs';
 import { IDENTITY_ENV, machineIdentity, otherAccountsOf } from '../plugin/lib/identity.mjs';
 import { manualProblems, pageStatementIds } from '../plugin/lib/page-check.mjs';
 import { withoutReplies, withReplies } from '../plugin/lib/reply.mjs';
@@ -410,7 +410,7 @@ const UPS_ANSWER = '停電用の予備の電池を事務所の棚の下の段に
 const UPS_NAME = '停電用の予備の電池';
 
 /** 機器を足す更新を、Writer の出力を書いて検査まで進める。 */
-function writeAddedDevice({ work, hikitsugi, write, read }, { answer = UPS_ANSWER, name = UPS_NAME, location = '事務所の棚の下の段にあります。', extra = [] } = {}) {
+function writeAddedDevice({ work, hikitsugi, write, read }, { answer = UPS_ANSWER, name = UPS_NAME, location = '事務所の棚の下の段にあります。', extra = [], device = {} } = {}) {
   assert.match(hikitsugi('update-add-device', [], answer), /。D\d+ を書きます$/);
   const { round } = read('state.json');
   const id = read('state.json').update.target;
@@ -426,7 +426,7 @@ function writeAddedDevice({ work, hikitsugi, write, read }, { answer = UPS_ANSWE
     statement('STM-005', '電池の箱を開けないでください。', evidence),
     ...extra,
   ];
-  write(`writer-${round}-${id}.json`, { statements, device: { id, name: 'STM-001', location: 'STM-002', purpose: 'STM-003', impact: 'STM-004', credential_location: null, caution: 'STM-005' } });
+  write(`writer-${round}-${id}.json`, { statements, device: { id, name: 'STM-001', location: 'STM-002', purpose: 'STM-003', impact: 'STM-004', credential_location: null, caution: 'STM-005', ...device } });
   return { id, task, check: () => hikitsugi('check-writer', [String(round), id]) };
 }
 
@@ -460,6 +460,63 @@ test('機器を足す：機器 1 件だけを書いて照合し、確認のあ�
     writeAddedDevice(tool, { name: '2台目の電池', answer: UPS_ANSWER.replace(UPS_NAME, '2台目の電池') }).check();
     assert.equal(read('state.json').update.target, 'D2');
   }));
+
+test('機器を足す：答えで「パスワードはない」と言われたときだけ「パスワード：ありません」と出す。記録がない機器には行を出さない', () =>
+  finished((tool) => {
+    const { work, hikitsugi, read } = tool;
+    hikitsugi('update-start', ['佐藤']);
+    const none = (evidence) => [statement('STM-006', 'パスワードはありません。', evidence)];
+    const { id, task, check } = writeAddedDevice(tool, { extra: [], device: { credential_none: 'STM-006' } });
+    // 文を足し直す：evidence は今回の答え
+    const round = String(read('state.json').round);
+    const raw = JSON.parse(readFileSync(join(work, `writer-${round}-${id}.json`), 'utf8'));
+    tool.write(`writer-${round}-${id}.json`, { ...raw, statements: [...raw.statements, ...none(task.revision.page_fix.evidence)] });
+    check();
+    const { scope, shown } = passThrough(tool, id);
+    assert.ok(scope.includes('STM-006') || read('manual-final.json').devices.find((d) => d.id === id).credential_none, 'パスワードがない文も照合にかける');
+    assert.match(shown, /パスワード：ありません/);
+    const added = read('manual-final.json').devices.find((device) => device.id === id);
+    assert.ok(added.credential_none);
+    assert.equal(added.credential_location, null);
+    const html = readFileSync(join(work, 'manual.html'), 'utf8');
+    const company = html.slice(html.indexOf('<section id="tab-company"'), html.indexOf('</section>', html.indexOf('<section id="tab-company"')));
+    assert.equal(company.split('<dt>パスワード</dt><dd>ありません</dd>').length - 1, 1, '「ない」と言われた機器だけに出す');
+    assert.ok(JSON.parse(readFileSync(join(work, 'manual.json'), 'utf8')).manual.devices.find((device) => device.id === id).credential_none, 'manual.json にも残る');
+  }));
+
+test('機器を足す：答えに「パスワードはない」がなければ、パスワードがないとは書けない。保管場所と一緒にも書けない', () =>
+  finished((tool) => {
+    tool.hikitsugi('update-start', ['佐藤']);
+    const silent = UPS_ANSWER.replace('パスワードはありません。', '');
+    const added = writeAddedDevice(tool, { answer: silent, device: { credential_none: 'STM-006' } });
+    const round = String(tool.read('state.json').round);
+    const path = join(tool.work, `writer-${round}-${added.id}.json`);
+    const raw = JSON.parse(readFileSync(path, 'utf8'));
+    const evidence = added.task.revision.page_fix.evidence;
+    writeFileSync(path, JSON.stringify({ ...raw, statements: [...raw.statements, statement('STM-006', 'パスワードはありません。', evidence)] }));
+    assert.throws(added.check, /答えで「ない」と言われたときだけ書けます/);
+    // 文が「ない」と言っていなければ止める。保管場所と一緒にも書けない
+    const fixed = JSON.parse(readFileSync(path, 'utf8'));
+    writeFileSync(path, JSON.stringify({ ...fixed, statements: fixed.statements.map((s) => (s.id === 'STM-006' ? { ...s, text: '電池の箱の中にあります。' } : s)), device: { ...fixed.device, credential_location: 'STM-005' } }));
+    assert.throws(added.check, /一緒に書けません[\s\S]*パスワードがないことを書きます/);
+  }));
+
+test('最初に作るとき：共通部分の Writer の形は credential_none を必ず書き、「ない」の答えがなければ止める。前の版の機器（欄なし）も読める', () => {
+  const common = writerFormat('common');
+  assert.ok(common.properties.devices.items.required.includes('credential_none'));
+  assert.ok(!MANUAL_SCHEMA.properties.devices.items.required.includes('credential_none'), 'manual.json では必須にしない（前の版を読むため）');
+  const transcript = { entries: [
+    { id: 'INT-001', status: 'answered', answer: '予備の電池にパスワードはありません。' },
+    { id: 'INT-002', status: 'answered', answer: '予備の電池は棚にあります。' },
+  ] };
+  const statements = [{ id: 'STM-001', text: 'パスワードはありません。', evidence: ['INT-001'] }, { id: 'STM-002', text: 'パスワードはありません。', evidence: ['INT-002'] }];
+  assert.deepEqual(credentialNoneProblems([{ id: 'D1', credential_location: null, credential_none: 'STM-001' }], statements, { transcript }), []);
+  assert.match(credentialNoneProblems([{ id: 'D1', credential_location: null, credential_none: 'STM-002' }], statements, { transcript }).join(), /答えで「ない」と言われたときだけ/);
+  assert.deepEqual(credentialNoneProblems([{ id: 'D1', credential_location: null }], statements, { transcript }), [], '欄のない前の版の機器は問題にしない');
+  const old = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8')).manual;
+  assert.ok(old.devices.every((device) => !('credential_none' in device)));
+  assert.deepEqual(validate(MANUAL_SCHEMA, old), []);
+});
 
 test('機器を足す：置き場所に部屋の名前がなければ警告して止めない。同じ名前とパスワードの本体は止める', () =>
   finished((tool) => {

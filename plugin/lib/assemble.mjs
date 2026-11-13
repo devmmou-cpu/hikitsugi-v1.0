@@ -23,9 +23,14 @@ const WRITER_STATEMENTS = { ...MANUAL_SCHEMA.properties.statements, items: witho
 
 const objectOf = (properties) => ({ type: 'object', additionalProperties: false, required: Object.keys(properties), properties });
 
+// Writer には credential_none も必ず書かせる（なければ null）。manual.json では、前の版の説明書を読めるよう必須にしない
+const DEVICES = MANUAL_SCHEMA.properties.devices;
+const WRITER_DEVICES = { ...DEVICES, items: { ...DEVICES.items, required: [...DEVICES.items.required, 'credential_none'] } };
+
 /** 共通部分の出力の形。 */
 export const commonSchema = () => {
-  const { contacts, routines, devices, before_leaving: beforeLeaving } = MANUAL_SCHEMA.properties;
+  const { contacts, routines, before_leaving: beforeLeaving } = MANUAL_SCHEMA.properties;
+  const devices = WRITER_DEVICES;
   return objectOf({
     page_plan: {
       $comment: '作る手順ページの一覧。symptom はページを書く担当へ渡す、症状の短い説明',
@@ -59,7 +64,7 @@ const STATEMENTS_BEFORE_COMPOSE = {
 export const contactSchema = () => objectOf({ statements: WRITER_STATEMENTS, contact: MANUAL_SCHEMA.properties.contacts.items });
 
 /** 更新で機器1件を書く形。連絡先と同じく、ほかの文が変わらないよう、その機器の文だけを書く。 */
-export const deviceSchema = () => objectOf({ statements: WRITER_STATEMENTS, device: MANUAL_SCHEMA.properties.devices.items });
+export const deviceSchema = () => objectOf({ statements: WRITER_STATEMENTS, device: WRITER_DEVICES.items });
 
 /** 手順ページのない困りごとへの答えの形。 */
 export const symptomSchema = () => objectOf({
@@ -83,11 +88,46 @@ export const writerFormat = (part) => {
   return { $comment: 'Writer が保存する JSON の形。この項目の名前と値のとおりに保存する', ...schema, properties: { ...schema.properties, statements: STATEMENTS_BEFORE_COMPOSE } };
 };
 
+/**
+ * 機器に credential_none の欄がなければ null を入れる。前の版の説明書の機器を写した出力でも、形の検査で止めないため。
+ * API の出力の形では必須なので、評価の Writer は必ず書く。
+ */
+export function withCredentialNone(output) {
+  const fill = (device) => (device && !('credential_none' in device) ? { ...device, credential_none: null } : device);
+  return { ...output, ...(Array.isArray(output.devices) ? { devices: output.devices.map(fill) } : {}), ...(output.device ? { device: fill(output.device) } : {}) };
+}
+
+/** 機器が使う文章の ID。 */
+export const deviceStatementIds = (device) => [device.name, device.location, device.purpose, device.impact, device.credential_location, device.credential_none, device.caution].filter(Boolean);
+
+// 「パスワードはない」の文と、その根拠の答え
+const NO_PASSWORD = /パスワード(?:は|が)?(?:ありません|ない|設定されていません|設定していません|かかっていません|かけていません)/;
+
+/**
+ * 「パスワード：ありません」と出す機器を確かめる。答えで「ない」と言われたときだけにする。
+ * 記録がないときは credential_none も credential_location も null にする（行を出さない）。
+ */
+export function credentialNoneProblems(devices, statements, sources) {
+  const byId = new Map(statements.map((statement) => [statement.id, statement]));
+  const answers = new Map(sources.transcript.entries.filter((entry) => entry.status === 'answered').map((entry) => [entry.id, entry.answer]));
+  const problems = [];
+  for (const device of devices) {
+    if (!device.credential_none) continue;
+    if (device.credential_location) problems.push(`${device.id}: パスワードがない（credential_none）と、パスワードを置いてある場所（credential_location）は一緒に書けません`);
+    const statement = byId.get(device.credential_none);
+    if (!statement) continue;
+    if (!NO_PASSWORD.test(statement.text)) problems.push(`${device.id}: credential_none の文は「パスワードはありません。」のように、パスワードがないことを書きます`);
+    const said = statement.evidence.some((ref) => NO_PASSWORD.test(answers.get(ref) ?? ''));
+    if (!said) problems.push(`${device.id}: パスワードがないことは、答えで「ない」と言われたときだけ書けます。記録がなければ credential_none を null にしてください`);
+  }
+  return problems;
+}
+
 /** 共通部分が使う文章の ID を返す。 */
 export const commonStatementIds = ({ contacts, routines, devices }) => [
   ...contacts.flatMap((c) => [c.role, c.hours, c.contract_location, c.what_to_tell].filter(Boolean)),
   ...routines.flatMap((r) => [r.title, ...r.steps]),
-  ...devices.flatMap((d) => [d.name, d.location, d.purpose, d.impact, d.credential_location, d.caution].filter(Boolean)),
+  ...devices.flatMap(deviceStatementIds),
 ];
 
 /** 共通部分の出力を確かめる。 */
@@ -107,7 +147,7 @@ export function checkCommon(output, sources, { library = loadLibrary(), retiree 
   const ids = output.page_plan.map((entry) => entry.id);
   if (new Set(ids).size !== ids.length) problems.push('page_plan の id が重複しています');
   const piece = { statements, contacts: output.contacts };
-  problems.push(...statementProblems(statements, retiree), ...contactProblems(piece), ...retireeContactProblems(output.contacts, retiree), ...contactEvidenceProblems(output.contacts, sources));
+  problems.push(...statementProblems(statements, retiree), ...contactProblems(piece), ...retireeContactProblems(output.contacts, retiree), ...contactEvidenceProblems(output.contacts, sources), ...credentialNoneProblems(output.devices, statements, sources));
   // 退職前にやることは本人に見せる一覧。根拠は実際の回答だけで、認証情報を書かない
   const answered = new Set(sources.transcript.entries.filter((entry) => entry.status === 'answered').map((entry) => entry.id));
   output.before_leaving.forEach(({ text, evidence }, index) => {
@@ -142,7 +182,6 @@ export function checkContact(output, id, sources, { library = loadLibrary(), ret
 
 const compactText = (text) => String(text ?? '').normalize('NFKC').replace(/\s+/g, '');
 
-const deviceStatementIds = (device) => [device.name, device.location, device.purpose, device.impact, device.credential_location, device.caution].filter(Boolean);
 
 /**
  * 更新で書いた機器1件を確かめる。id は対象に固定する。
@@ -156,6 +195,7 @@ export function checkDevice(output, id, sources, { library = loadLibrary(), reti
   if (missing.length) problems.push(`statements にない文章を参照しています: ${missing.join(', ')}`);
   problems.push(...statementProblems(statements, retiree));
   for (const statement of statements) if (hasCredential(statement.text)) problems.push(`${statement.id}: 認証情報の本体を書かないでください。パスワードを置いてある場所だけを書きます`);
+  problems.push(...credentialNoneProblems([device], statements, sources));
   const name = compactText(byId.get(device.name)?.text);
   const sameName = others.find((other) => other.id !== id && compactText(other.name) === name);
   if (name && sameName) problems.push(`${id}: 「${byId.get(device.name).text}」は ${sameName.id} と同じ名前です。今の機器を直すときは「機器を直す」を使ってください`);

@@ -201,7 +201,7 @@ function referencedStatements(manual) {
     ...manual.symptom_pages.flatMap(pageStatementIds),
     ...manual.contacts.flatMap((c) => [c.role, c.hours, c.contract_location, c.what_to_tell].filter(Boolean)),
     ...manual.routines.flatMap((r) => [r.title, ...r.steps]),
-    ...manual.devices.flatMap((d) => [d.name, d.location, d.purpose, d.impact, d.credential_location, d.caution].filter(Boolean)),
+    ...manual.devices.flatMap((d) => [d.name, d.location, d.purpose, d.impact, d.credential_location, d.credential_none, d.caution].filter(Boolean)),
     ...manual.glossary.map((g) => g.company),
   ];
 }
@@ -297,7 +297,8 @@ function termHtml(ctx, term, id) {
 
 const emptyHtml = (text) => `<p class="empty">${esc(text)}</p>`;
 
-const factsHtml = (ctx, rows) => `<dl class="facts">${rows.map(([label, id]) => `<dt>${esc(label)}</dt><dd>${ctx.text(id)}</dd>`).join('')}</dl>`;
+// 3 つ目に文字列があれば、文章の ID ではなく、その決まった文を出す
+const factsHtml = (ctx, rows) => `<dl class="facts">${rows.map(([label, id, fixed]) => `<dt>${esc(label)}</dt><dd>${fixed === undefined ? ctx.text(id) : esc(fixed)}</dd>`).join('')}</dl>`;
 
 /** 帯。手順の外に置く。安心は盾、分岐は！、例外は×の印を付ける。 */
 const BAND_ICONS = { safe: 'shield', branch: 'alert', exception: 'cross' };
@@ -832,6 +833,8 @@ function deviceHtml(ctx, device) {
     factsHtml(ctx, [
       ['置き場所', device.location],
       ...(device.credential_location ? [['パスワードの保管場所', device.credential_location]] : []),
+      // 答えで「ない」と言われたときだけ出す。記録がないときは行を出さない
+      ...(device.credential_none ? [['パスワード', device.credential_none, 'ありません']] : []),
       ['役割', device.purpose],
       ['止まると', device.impact],
       ...(device.caution ? [['やってはいけないこと', device.caution]] : []),

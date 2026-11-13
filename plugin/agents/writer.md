@@ -53,6 +53,7 @@ tools: Read, Write
 - `routines`：定期的な作業。`frequency` は `weekly`、`monthly`、`yearly`。年に1回の作業には `month` を入れます
 - `devices`：機器の一覧。`name`、`location`、`purpose`、`impact`（止まると何が困るか）は文章の ID です。後任が操作する機器は必ず載せ、`location` に部屋まで書きます
   - `credential_location`：パスワードを置いてある場所の文章の ID。値は書きません。なければ `null` です
+  - `credential_none`：答えで「パスワードはない」と言われた機器だけ、「パスワードはありません。」の文章の ID を入れ、`evidence` にその答えを入れます。`credential_location` は `null` にします。パスワードの記録がないだけのときは、どちらも `null` です
   - `caution`：やってはいけないことの文章の ID。なければ `null` です。調査データで大型更新を保留している PC は機器に載せ、理由と、大型更新を進めないことをここに書きます
 - `before_leaving`：退職する本人にしかできない作業の一覧です。後任向けの取扱説明書には出ず、本人の確認のときに見せます。`text` は本人に向けて「〜を移してください」のように書き、`evidence` に根拠の `INT-` を入れます。なければ空の配列です
 
@@ -102,7 +103,7 @@ tools: Read, Write
 完成した取扱説明書を、あとから直します。`page_fix` の `comment` のとおりに直し、`evidence` の ID を根拠にします。古い内容の文は新しい内容に置き換えます。`comment` に関係のない文章と ID は変えません。
 - `task.part` が `contact` のときは、`task.revision.previous` の連絡先1件だけを書きます。`contact` と、その文章だけの `statements` を返します
   - `update.add_contact` があるときは、新しい連絡先を1件書きます。前の版はありません（`previous.contact` は `null`）。`contact.id` は `add_contact.id` のままにします。`name` と `phone` は `page_fix.comment` に書かれたとおりに書き、退職する担当者本人を書きません。`role`、`hours`、`contract_location`、`what_to_tell` は、共通部分の連絡先と同じ決まりで書きます
-- `task.part` が `device` のときは、機器1件だけを書きます。`device` と、その文章だけの `statements` を返します。`update.add_device` があるときは新しい機器で、前の版はありません（`previous.device` は `null`）。`device.id` は `add_device.id` のままにします。共通部分の `devices` と同じ決まりで、`location` には部屋まで書き、`credential_location` にはパスワードを置いてある場所だけを書きます
+- `task.part` が `device` のときは、機器1件だけを書きます。`device` と、その文章だけの `statements` を返します。`update.add_device` があるときは新しい機器で、前の版はありません（`previous.device` は `null`）。`device.id` は `add_device.id` のままにします。共通部分の `devices` と同じ決まりで、`location` には部屋まで書き、`credential_location` にはパスワードを置いてある場所だけを書きます。答えで「パスワードはない」と言われたら、`credential_none` に「パスワードはありません。」の文章を入れます
 - `update.add_symptom` があるとき、共通部分では `page_plan` に `add_symptom.id` の行を足します。`category` と `symptom` を書き、前の版の連絡先、定期作業、機器は変えません。連絡先と機器を足すのは、`task.part` が `contact` と `device` の更新だけです。新しいページの ③ は、`task.contacts` の中から選びます
 
 ## 載せ漏れ（task.revision.missing がある場合）

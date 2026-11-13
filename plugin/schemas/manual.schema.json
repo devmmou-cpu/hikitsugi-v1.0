@@ -423,6 +423,14 @@
             ],
             "pattern": "^STM-\\d{3}$"
           },
+          "credential_none": {
+            "$comment": "答えで「パスワードはない」と言われたときの文章の ID。画面には「パスワード：ありません」と出す。credential_location と一緒には使わない。なければ null。前の版の説明書にはない欄なので、必須にしない",
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^STM-\\d{3}$"
+          },
           "caution": {
             "$comment": "やってはいけないこと。なければ null",
             "type": [

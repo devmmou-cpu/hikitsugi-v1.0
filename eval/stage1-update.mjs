@@ -174,7 +174,7 @@ export function judge({ base, work, steps, before, identity }) {
   const addedIds = [
     ...(contact ? [contact.role, contact.hours, contact.contract_location, contact.what_to_tell] : []),
     ...(page ? pageStatementIds(page) : []),
-    ...(device ? [device.name, device.location, device.purpose, device.impact, device.credential_location, device.caution] : []),
+    ...(device ? [device.name, device.location, device.purpose, device.impact, device.credential_location, device.credential_none, device.caution] : []),
   ].filter(Boolean);
   const verdicts = new Map();
   for (const name of readdirSync(work)) {

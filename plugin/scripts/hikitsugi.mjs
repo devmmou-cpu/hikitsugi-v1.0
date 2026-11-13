@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyEdits } from '../lib/apply-edits.mjs';
-import { assembleManual, checkCommon, checkContact, checkDevice, checkPage, droppedFromCommon, mergeRewritten, ownersOf, previousPiece, writerFormat } from '../lib/assemble.mjs';
+import { assembleManual, checkCommon, checkContact, checkDevice, checkPage, droppedFromCommon, mergeRewritten, ownersOf, previousPiece, withCredentialNone, writerFormat } from '../lib/assemble.mjs';
 import { buildRevision, carryForward, markReviewed, mergeVerification, prepareForRender, summarizeVerification, UnapprovedPartsError, verificationScope } from '../lib/handover.mjs';
 import { coverageLeaks, locationWarnings } from '../lib/coverage-check.mjs';
 import { additionProblems, applySymptomAnswer, basisProblems, symptomGaps } from '../lib/symptom-check.mjs';
@@ -281,7 +281,7 @@ function checkWriter(work, [round, part]) {
   const state = readJson(join(work, 'state.json'));
   const sources = { survey: readJson(join(work, 'survey.json')), transcript: readJson(join(work, 'transcript.json')) };
   const path = join(work, partFile(round, part));
-  const raw = readJson(path);
+  let raw = readJson(path);
   if (part === 'symptoms') return checkSymptoms(work, state, raw);
   const previous = Number(round) > 1 ? readJson(join(work, `findings-${Number(round) - 1}.json`)).previous_manual : null;
   const added = previous && addedIsNew(state, previous) ? state.update.add : null;
@@ -299,6 +299,7 @@ function checkWriter(work, [round, part]) {
     const answer = adding ? sources.transcript.entries.find((entry) => entry.id === state.page_fix?.evidence)?.answer ?? '' : null;
     checked = checkContact(raw, part, sources, { retiree: state.retiree, others: previous.contacts, answer });
   } else if (state.update?.device === part) {
+    raw = withCredentialNone(raw);
     const schemaProblems = validate(writerFormat('device'), raw);
     if (schemaProblems.length) throw new Problem(`形式が違います（${part}）：\n${schemaProblems.slice(0, 10).join('\n')}`);
     const text = new Map(previous.statements.map((statement) => [statement.id, statement.text]));
@@ -309,7 +310,8 @@ function checkWriter(work, [round, part]) {
     if (added && !addedRow) throw new Problem(`page_plan に ${added.id} を足してください`);
     // 困りごとから足すページの行は、プログラムが入れる。ほかの行は前の版のまま
     const beforeAdding = !previous && state.symptom_add?.length ? readJson(join(work, partFile(1, 'common-previous'))) : null;
-    const output = previous ? { ...raw, page_plan: addedRow ? [...plan, addedRow] : plan } : beforeAdding ? { ...raw, page_plan: withAddedRows(beforeAdding.page_plan, state.symptom_add) } : raw;
+    const filled = withCredentialNone(raw);
+    const output = previous ? { ...filled, page_plan: addedRow ? [...plan, addedRow] : plan } : beforeAdding ? { ...filled, page_plan: withAddedRows(beforeAdding.page_plan, state.symptom_add) } : filled;
     const schemaProblems = validate(writerFormat('common'), output);
     if (schemaProblems.length) throw new Problem(`形式が違います（共通部分）：\n${schemaProblems.slice(0, 10).join('\n')}`);
     checked = checkCommon(output, sources, { retiree: state.retiree });
@@ -624,8 +626,8 @@ function reviewShow(work, [pageId]) {
   }
   const deviceShown = manual.devices.find((candidate) => candidate.id === pageId);
   if (deviceShown) {
-    const { name, location, purpose, impact, credential_location: credential, caution } = deviceShown;
-    return [`${pageId}：${textsOf(manual, [name])[0]}`, ...textsOf(manual, [location, purpose, impact]), ...section2(manual, 'パスワードを置いてある場所', credential), ...section2(manual, 'やってはいけないこと', caution)].join('\n');
+    const { name, location, purpose, impact, credential_location: credential, credential_none: none, caution } = deviceShown;
+    return [`${pageId}：${textsOf(manual, [name])[0]}`, ...textsOf(manual, [location, purpose, impact]), ...section2(manual, 'パスワードを置いてある場所', credential), ...(none ? ['パスワード：ありません', ...textsOf(manual, [none])] : []), ...section2(manual, 'やってはいけないこと', caution)].join('\n');
   }
   const page = manual.symptom_pages.find((candidate) => candidate.id === pageId);
   if (!page) throw new Problem(`手順ページがありません：${pageId}`);
