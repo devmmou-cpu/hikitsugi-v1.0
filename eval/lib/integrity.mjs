@@ -162,6 +162,18 @@ function pageFactProblems(pageFacts, info, facts, common) {
   return problems;
 }
 
+/** 自由に足す段の補足の事実。調整用の会社だけ。ID はほかの事実と重ならない。 */
+function openItemProblems(open, info, taken) {
+  const problems = [];
+  if (info.split !== 'tuning') problems.push('自由に足す段の補足の事実は、調整用の会社にだけ置きます');
+  for (const item of open.items) {
+    if (taken.has(item.id)) problems.push(`自由に足す段の補足の事実の ID が、ほかの事実と重なっています：${item.id}`);
+    if (CREDENTIAL_IN_TEXT.test(item.answer)) problems.push(`自由に足す段の補足の事実に認証情報らしい文があります：${item.id}`);
+  }
+  if (new Set(open.items.map((item) => item.id)).size !== open.items.length) problems.push('自由に足す段の補足の事実の ID が重なっています');
+  return problems;
+}
+
 // 補足の事実は保管場所の文も書かないので、パスワードの語と値の形があれば止める
 const CREDENTIAL_IN_TEXT = /(?:パスワード|暗証番号)(?:は|:|：|=)\s*[!-~]{4,}/;
 
@@ -198,6 +210,10 @@ export function checkSet(setDir, { repoRoot, checklistPath, schemaRoot = repoRoo
   const pageFactsPath = join(setDir, 'hidden/page_facts.json');
   const pageFacts = existsSync(pageFactsPath) ? readJson(pageFactsPath) : null;
   if (pageFacts) for (const error of validate(schema('eval/schemas/page-facts.schema.json'), pageFacts)) problems.push(`形式 hidden/page_facts.json ${error}`);
+  // 自由に足す段の補足の事実（自由な項目と引き継ぎ）
+  const openPath = join(setDir, 'hidden/open_items.json');
+  const openItems = existsSync(openPath) ? readJson(openPath) : null;
+  if (openItems) for (const error of validate(schema('eval/schemas/open-items.schema.json'), openItems)) problems.push(`形式 hidden/open_items.json ${error}`);
   const checklist = readJson(checklistPath);
   for (const error of validate(schema('plugin/schemas/checklist.schema.json'), checklist)) {
     problems.push(`形式 checklist ${error}`);
@@ -227,6 +243,10 @@ export function checkSet(setDir, { repoRoot, checklistPath, schemaRoot = repoRoo
   if (pageFacts) {
     if (pageFacts.company !== data.case.company) problems.push(`page_facts の会社 ID が違います: ${pageFacts.company}`);
     problems.push(...pageFactProblems(pageFacts, data.case, data.facts, common));
+  }
+  if (openItems) {
+    if (openItems.company !== data.case.company) problems.push(`open_items の会社 ID が違います: ${openItems.company}`);
+    problems.push(...openItemProblems(openItems, data.case, new Set([...data.facts.facts, ...(common?.facts ?? []), ...(pageFacts?.facts ?? [])].map((fact) => fact.id))));
   }
 
   // ---- 必須項目 ----
@@ -382,7 +402,7 @@ export function checkSet(setDir, { repoRoot, checklistPath, schemaRoot = repoRoo
   }
 
   // ---- 架空性：英字の語 ----
-  const textSources = [...Object.values(data), checklist, ...(common ? [common.facts.map((fact) => fact.answer)] : []), ...(pageFacts ? [pageFacts.facts.map((fact) => fact.answer)] : [])];
+  const textSources = [...Object.values(data), checklist, ...(common ? [common.facts.map((fact) => fact.answer)] : []), ...(pageFacts ? [pageFacts.facts.map((fact) => fact.answer)] : []), ...(openItems ? [openItems.items.flatMap((item) => [item.name, item.answer])] : [])];
   for (const source of textSources) {
     for (const text of collectValues(source)) {
       for (const [word] of text.matchAll(WORD)) {

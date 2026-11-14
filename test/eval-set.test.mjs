@@ -221,6 +221,10 @@ test('定番の症状の補足の事実：件数の決まり、ID の重なり�
   includes(withCopy((setDir) => editJson(join(setDir, 'hidden/page_facts.json'), (d) => { d.facts[1].id = 'F-81'; })), 'ほかの事実と重なっています');
   includes(withCopy((setDir) => editJson(join(setDir, 'hidden/page_facts.json'), (d) => { d.facts[0].answer += 'ZzyxBrand の箱です。'; })), 'ZzyxBrand');
   includes(withCopy((setDir) => editJson(join(setDir, 'hidden/page_facts.json'), (d) => { d.company = 'kuzuri'; })), 'page_facts の会社 ID が違います');
+  // 自由に足す段の補足の事実
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/open_items.json'), (d) => { d.items[0].id = 'F-60'; })), 'ほかの事実と重なっています');
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/open_items.json'), (d) => { d.items[0].answer += 'ZzyxBrand の機械です。'; })), 'ZzyxBrand');
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/open_items.json'), (d) => { d.items[0].kind = 'person'; })), 'hidden/open_items.json');
 });
 
 test('定番の症状の補足の事実：保留の会社に置くと失敗する', () => {
