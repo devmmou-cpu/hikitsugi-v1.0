@@ -30,10 +30,13 @@ export const pageStatementIds = (page) => [
 
 const sentencesOf = (text) => text.split('。').map((sentence) => sentence.trim()).filter(Boolean);
 
+// 禁止の文（〜しないでください）。「つないでください」は「つなぐ」の操作で、禁止ではない（否定は「つながないでください」）
+const PROHIBITION = /(?<!つ)ないでください$/;
+
 /** 操作の文か。1文で、「〜してください」で終わるものだけを認める。禁止は説明に置く。 */
 export function isActionText(text) {
   const sentences = sentencesOf(text);
-  return sentences.length === 1 && /ください$/.test(sentences[0]) && !/ないでください$/.test(sentences[0]);
+  return sentences.length === 1 && /ください$/.test(sentences[0]) && !PROHIBITION.test(sentences[0]);
 }
 
 /** 操作の欄に置かれた、1つの操作ではない文章の一覧。部品の文面は確認済みなので対象にしない。 */

@@ -305,6 +305,10 @@ test('取扱説明書の採点：手順に置いた、やることではない�
   assert.deepEqual(nonActionSteps({ statements, symptom_pages: [page] }), [{ page: 'T1', statement: 'STM-001' }]);
   assert.equal(isActionText('総務課に知らせてください。'), true);
   assert.equal(isActionText('勝手に再起動しないでください。'), false);
+  // 「つなぐ」の操作は禁止の文ではない（段 2 の通しで、手順として受け付けられずに止まった）
+  assert.equal(isActionText('電源アダプターをつないでください。'), true);
+  assert.equal(isActionText('LAN ケーブルを、ルーターにつないでください。'), true);
+  assert.equal(isActionText('ケーブルをつながないでください。'), false);
   assert.equal(isActionText('NAS は事務所にあります。'), false);
   assert.equal(isActionText('画面が消えます。そのあと電源を入れてください。'), false);
 });
