@@ -1,0 +1,67 @@
+{
+  "$comment": "手順の抜けの質問の補足の事実（ページの質の模擬評価）。調整用の会社だけに置く。物に触る手順の見分け方、待つ時間、直ったかの確かめ方の事実",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "company",
+    "purpose",
+    "rules",
+    "facts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "company": {
+      "type": "string",
+      "minLength": 1
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "facts": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "about",
+          "status",
+          "answer"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^F-\\d{2}$"
+          },
+          "about": {
+            "$comment": "何の機器の事実か（説明の欄。語の検査にかけない）",
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "answered"
+            ]
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

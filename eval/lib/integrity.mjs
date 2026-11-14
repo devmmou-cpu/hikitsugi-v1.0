@@ -148,6 +148,20 @@ function commonFactProblems(common, info, facts, root) {
   return problems;
 }
 
+/** 手順の抜けの質問の補足の事実（ページの質）。調整用の会社だけ。ID は模擬の田中さんの事実と定番の症状の補足と重ならない。 */
+function pageFactProblems(pageFacts, info, facts, common) {
+  const problems = [];
+  if (info.split !== 'tuning') problems.push('手順の抜けの補足の事実は、調整用の会社にだけ置きます');
+  const taken = new Set([...facts.facts.map((fact) => fact.id), ...(common?.facts ?? []).map((fact) => fact.id)]);
+  const ids = pageFacts.facts.map((fact) => fact.id);
+  if (new Set(ids).size !== ids.length) problems.push('手順の抜けの補足の事実の ID が重なっています');
+  for (const fact of pageFacts.facts) {
+    if (taken.has(fact.id)) problems.push(`手順の抜けの補足の事実の ID が、ほかの事実と重なっています：${fact.id}`);
+    if (CREDENTIAL_IN_TEXT.test(fact.answer)) problems.push(`手順の抜けの補足の事実に認証情報らしい文があります：${fact.id}`);
+  }
+  return problems;
+}
+
 // 補足の事実は保管場所の文も書かないので、パスワードの語と値の形があれば止める
 const CREDENTIAL_IN_TEXT = /(?:パスワード|暗証番号)(?:は|:|：|=)\s*[!-~]{4,}/;
 
@@ -180,6 +194,10 @@ export function checkSet(setDir, { repoRoot, checklistPath, schemaRoot = repoRoo
   const commonPath = join(setDir, 'hidden/common_symptoms.json');
   const common = existsSync(commonPath) ? readJson(commonPath) : null;
   if (common) for (const error of validate(schema('eval/schemas/common-facts.schema.json'), common)) problems.push(`形式 hidden/common_symptoms.json ${error}`);
+  // 手順の抜けの補足の事実（ページの質）
+  const pageFactsPath = join(setDir, 'hidden/page_facts.json');
+  const pageFacts = existsSync(pageFactsPath) ? readJson(pageFactsPath) : null;
+  if (pageFacts) for (const error of validate(schema('eval/schemas/page-facts.schema.json'), pageFacts)) problems.push(`形式 hidden/page_facts.json ${error}`);
   const checklist = readJson(checklistPath);
   for (const error of validate(schema('plugin/schemas/checklist.schema.json'), checklist)) {
     problems.push(`形式 checklist ${error}`);
@@ -205,6 +223,10 @@ export function checkSet(setDir, { repoRoot, checklistPath, schemaRoot = repoRoo
   if (common) {
     if (common.company !== data.case.company) problems.push(`common_symptoms の会社 ID が違います: ${common.company}`);
     problems.push(...commonFactProblems(common, data.case, data.facts, schemaRoot));
+  }
+  if (pageFacts) {
+    if (pageFacts.company !== data.case.company) problems.push(`page_facts の会社 ID が違います: ${pageFacts.company}`);
+    problems.push(...pageFactProblems(pageFacts, data.case, data.facts, common));
   }
 
   // ---- 必須項目 ----
@@ -360,7 +382,7 @@ export function checkSet(setDir, { repoRoot, checklistPath, schemaRoot = repoRoo
   }
 
   // ---- 架空性：英字の語 ----
-  const textSources = [...Object.values(data), checklist, ...(common ? [common.facts.map((fact) => fact.answer)] : [])];
+  const textSources = [...Object.values(data), checklist, ...(common ? [common.facts.map((fact) => fact.answer)] : []), ...(pageFacts ? [pageFacts.facts.map((fact) => fact.answer)] : [])];
   for (const source of textSources) {
     for (const text of collectValues(source)) {
       for (const [word] of text.matchAll(WORD)) {

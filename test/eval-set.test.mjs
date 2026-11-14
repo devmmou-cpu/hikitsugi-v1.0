@@ -216,6 +216,11 @@ test('定番の症状の補足の事実：件数の決まり、ID の重なり�
   includes(withCopy((setDir) => editJson(join(setDir, 'hidden/common_symptoms.json'), (d) => { d.facts[0].id = 'F-01'; })), '模擬の田中さんの事実と重なっています');
   includes(withCopy((setDir) => editJson(join(setDir, 'hidden/common_symptoms.json'), (d) => { d.facts[0].symptom = 'CS-99'; })), '承認済みの一覧にない症状です');
   includes(withCopy((setDir) => editJson(join(setDir, 'hidden/common_symptoms.json'), (d) => { d.facts[0].answer += 'ZzyxBrand の機械です。'; })), 'ZzyxBrand');
+  // 手順の抜けの補足の事実（ページの質）
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/page_facts.json'), (d) => { d.facts[0].id = 'F-01'; })), 'ほかの事実と重なっています');
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/page_facts.json'), (d) => { d.facts[1].id = 'F-81'; })), 'ほかの事実と重なっています');
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/page_facts.json'), (d) => { d.facts[0].answer += 'ZzyxBrand の箱です。'; })), 'ZzyxBrand');
+  includes(withCopy((setDir) => editJson(join(setDir, 'hidden/page_facts.json'), (d) => { d.company = 'kuzuri'; })), 'page_facts の会社 ID が違います');
 });
 
 test('定番の症状の補足の事実：保留の会社に置くと失敗する', () => {
