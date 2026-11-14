@@ -317,14 +317,16 @@ const PANEL_ANSWER = `分電盤のブレーカーが落ちて事務所の電気�
 const PANEL_TITLE = '分電盤のブレーカーが落ちた';
 
 /** 症状を足す更新で、共通部分と新しいページを書く。ページは今のページを写し、題名と ③ の連絡先を変える。 */
-function writeAddedSymptom({ work, hikitsugi, write, read }, contactId) {
+function writeAddedSymptom({ work, hikitsugi, write, read }, contactId, { emptyCommon = false } = {}) {
   const before = read('manual-final.json');
   assert.match(hikitsugi('update-add', [], PANEL_ANSWER), /。T\d+ を書きます$/);
   const round = String(read('state.json').round);
   const pageId = read('state.json').update.target;
   hikitsugi('writer-task', [round, 'common']);
   const { previous } = read('writer-task.json').revision;
-  write(`writer-${round}-common.json`, { ...previous, page_plan: [...previous.page_plan, { id: pageId, category: 'other', symptom: PANEL_TITLE }] });
+  // emptyCommon：Writer が連絡先、定期作業、機器を空で返したとき（11/14 の自動の通しで起きた）
+  const common = emptyCommon ? { ...previous, contacts: [], routines: [], devices: [] } : previous;
+  write(`writer-${round}-common.json`, { ...common, page_plan: [...previous.page_plan, { id: pageId, category: 'other', symptom: PANEL_TITLE }] });
   hikitsugi('check-writer', [round, 'common']);
   hikitsugi('writer-task', [round, pageId]);
   const task = read('writer-task.json');
@@ -336,6 +338,25 @@ function writeAddedSymptom({ work, hikitsugi, write, read }, contactId) {
   hikitsugi('check-writer', [round, pageId]);
   return { pageId, task };
 }
+
+test('症状を足す更新：Writer が共通部分の連絡先、定期作業、機器を空で返したら受け付けない。全部返せば、足したばかりの連絡先を ③ に使える', () =>
+  finished((tool) => {
+    const { hikitsugi, read } = tool;
+    hikitsugi('update-start', ['佐藤']);
+    const { id, check } = writeAddedContact(tool);
+    check();
+    passThrough(tool, id);
+    const before = read('manual-final.json');
+    // 11/14 の自動の通しでは、空で返った共通部分が通り、足したばかりの連絡先が消えて、次のページで止まった
+    assert.throws(() => writeAddedSymptom(tool, id, { emptyCommon: true }), /前の版の contacts を消さないでください/);
+    hikitsugi('update-cancel');
+    hikitsugi('update-start', ['佐藤']);
+    const { pageId } = writeAddedSymptom(tool, id);
+    passThrough(tool, pageId);
+    const after = read('manual-final.json');
+    assert.deepEqual(after.contacts, before.contacts);
+    assert.equal(after.symptom_pages.find((page) => page.id === pageId).fallback.contact, id);
+  }));
 
 test('足した連絡先を、続けて足した症状ページの ③ に使える。3 つの出力と更新の記録に出る', () =>
   finished((tool) => {

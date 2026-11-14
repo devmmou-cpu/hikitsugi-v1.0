@@ -301,7 +301,8 @@ function writerTask(work, [round, part]) {
     // 機器1件の指摘は共通部分の持ち物なので、その機器の文の指摘だけを渡す
     const pieceIds = new Set(previousOf.statements.map((statement) => statement.id));
     const owned = ownersOf(previous, findings).get(findingsOf) ?? [];
-    const revision = { previous: previousOf, findings: state.update?.device === part ? owned.filter((finding) => pieceIds.has(finding.statement)) : owned };
+    // 前の版の機器には credential_none の欄がないことがある。Writer に渡す形を出力の形に合わせる
+    const revision = { previous: withCredentialNone(previousOf), findings: state.update?.device === part ? owned.filter((finding) => pieceIds.has(finding.statement)) : owned };
     if (state.page_fix?.page === part) revision.page_fix = state.page_fix;
     const deadEndFix = state.dead_end_fixes?.[part];
     // 差し戻しの回は、最初の答えのあとに照合の指摘が出ている。指摘を優先するので、定型の文を強制しない
@@ -391,6 +392,8 @@ function checkWriter(work, [round, part]) {
     checked = checkCommon(output, sources, { retiree: state.retiree });
     // 載せ漏れの書き直しは足すだけ。前の版が消えていれば受け付けない
     if (beforeAdding && !state.leaks) checked.problems.push(...droppedFromCommon(beforeAdding, raw));
+    // 症状を足す更新も足すだけ。Writer が連絡先、定期作業、機器を空で返すと、足したばかりの連絡先が消えるので受け付けない
+    if (previous && added && !state.leaks) checked.problems.push(...droppedFromCommon(previousPiece(previous, 'common'), raw));
     if (state.leaks) {
       const before = Number(round) === 1 ? readJson(join(work, partFile(1, 'common-previous'))) : previousPiece(previous, 'common');
       checked.problems.push(...droppedFromCommon(before, raw));
