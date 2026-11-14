@@ -17,6 +17,7 @@ import { forDisplay } from '../lib/display.mjs';
 import { callScriptProblems, replyProblems } from '../lib/reply.mjs';
 import { firstStepFigures } from '../lib/figures.mjs';
 import { pageScopeNotes, routineScopeNotes } from '../lib/procedures.mjs';
+import { missingNote } from '../lib/page-quality.mjs';
 import { latestUpdateOf, UPDATE_KIND_LABELS } from '../lib/update.mjs';
 import { notConsultedLabels } from '../lib/common-symptoms.mjs';
 
@@ -209,6 +210,8 @@ function referencedStatements(manual) {
     ...manual.routines.flatMap((r) => [r.title, ...r.steps]),
     ...manual.devices.flatMap((d) => [d.name, d.location, d.purpose, d.impact, d.credential_location, d.credential_none, d.caution].filter(Boolean)),
     ...manual.glossary.map((g) => g.company),
+    // 退職後に聞く道（はじめにに出す）
+    ...(manual.after_leaving ? [manual.after_leaving] : []),
   ];
 }
 
@@ -420,6 +423,9 @@ function introHeadHtml({ manual }, titleTag) {
 }
 
 /** 「この説明書でできること」の一覧。 */
+/** 退職後に、社内の相手を通して前任者に聞ける道。答えがあった会社だけ。期限で表示は切り替えない。 */
+const afterLeavingHtml = (ctx) => (ctx.manual.after_leaving ? ['<p class="label intro-label">前任者に聞くとき</p>', `<p class="intro-text">${ctx.text(ctx.manual.after_leaving)}</p>`] : []);
+
 function introCansHtml({ manual: { review } }) {
   const cans = [
     ['check', '症状を選ぶと、やることが順に出ます。'],
@@ -441,6 +447,7 @@ function introPanel(ctx) {
     `<a class="btn btn-primary tap" href="#tab-help">困ったときは</a>`,
     '<p class="intro-more"><a class="tap text-link" href="#tab-contacts">連絡先を見る</a></p>',
     ...introCansHtml(ctx),
+    ...afterLeavingHtml(ctx),
     '<p class="label intro-label">判定の見かた</p>',
     legendHtml(),
     updateLogHtml(ctx),
@@ -510,6 +517,7 @@ function pickPromptHtml(ctx) {
     '<div class="js-only pick-prompt" id="pick-home">',
     ...introHeadHtml(ctx, 'h2'),
     ...introCansHtml(ctx),
+    ...afterLeavingHtml(ctx),
     '<p class="label intro-label">判定の見かた</p>',
     legendHtml(),
     firstContactHtml(ctx),
@@ -704,6 +712,12 @@ function replyHtml(ctx, page) {
   ].join('\n');
 }
 
+/** 物に触る手順で、見分け方・待つ時間・確かめ方の記録がないときの決まった文。数字や見分け方は書かない。 */
+export const missingNoteHtml = (ctx, page) => {
+  const note = missingNote(page, ctx.manual);
+  return note ? `<p class="band band-exception missing-note">${icon(BAND_ICONS.exception)}<span>${esc(note)}</span></p>` : '';
+};
+
 function symptomPanel(ctx, page) {
   const contact = page.fallback ? ctx.contacts.get(page.fallback.contact) : null;
   const terms = pageTerms(ctx, page, contact);
@@ -741,6 +755,7 @@ function symptomPanel(ctx, page) {
     notesHtml(ctx, page, !hasFirst && !hasSteps),
     looseBands,
     steps,
+    missingNoteHtml(ctx, page),
     contactLeads ? '' : last,
     !contact && ctx.manual.contacts.length ? '<p class="tab-link"><a class="tap text-link" href="#tab-contacts">連絡先の一覧を見る</a></p>' : '',
     infoHtml(ctx, page),

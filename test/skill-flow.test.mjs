@@ -54,6 +54,8 @@ function toWriter({ hikitsugi, write, read }) {
   write('next.json', { action: 'ask', gap: 'GAP-001', covers: ['CHK-02'], question: '次の質問', unfilled: [] });
   hikitsugi('record', ['answered'], '再接続すれば直ります。');
   write('state.json', { ...read('state.json'), interview_done: true });
+  // 退職後に聞く道（20 問に答えがないので 1 問聞く）。ここでは「分からない」
+  hikitsugi('after-leaving', ['unknown']);
 }
 
 const pieces = () => {

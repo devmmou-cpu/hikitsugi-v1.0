@@ -20,6 +20,9 @@ import { clientOf, runGapFinderLive, runVerifierLive } from './lib/adapters/live
 import { UsageError } from './lib/adapters/errors.mjs';
 import { runInterviewLive } from './lib/interview-loop.mjs';
 import { loadCommonFacts, runCommonSymptomsLive } from './lib/common-stage.mjs';
+import { loadPageFacts, runAfterLeavingLive, runPageGapsLive } from './lib/page-quality-stage.mjs';
+import { PAGE_GAP } from '../plugin/lib/page-quality.mjs';
+import { AFTER_LEAVING_GAP } from '../plugin/lib/after-leaving.mjs';
 import { commonSymptomsOf, COMMON_GAP } from '../plugin/lib/common-symptoms.mjs';
 import { loadAnswers, loadCase, loadHidden, loadInput, readJson } from './lib/load-set.mjs';
 import { maskCredentials } from './lib/runner.mjs';
@@ -56,6 +59,8 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
   const hidden = loadHidden(setDir).facts;
   // 定番の症状の補足の事実は、調整用の会社にだけある。20 問の聞き取りには渡さない
   const commonFacts = loadCommonFacts(setDir);
+  // 手順の抜けの補足の事実（ページの質）。調整用の会社にだけある。手順の抜けの質問にだけ渡す
+  const pageFacts = loadPageFacts(setDir);
   mkdirSync(dir, { recursive: true });
   const api = await clientOf(client);
 
@@ -107,8 +112,11 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
 
     // 20 問のあとの、定番の症状の段（段 2）。選ぶ段と追加の質問は 20 問の外で数える
     const commonRun = await once('common-symptoms', null, () => runCommonSymptomsLive({ transcript: interview, hidden, commonFacts, client: api, record }));
-    const transcript = schemaCheck('transcript', commonRun.transcript);
     const commonState = commonRun.common;
+    // 退職後に聞く道。20 問の中に答えがあれば聞かない。書き始める前に 1 問だけ
+    const leaving = await once('after-leaving', null, () => runAfterLeavingLive({ transcript: commonRun.transcript, hidden, commonFacts, client: api, record }));
+    let transcript = schemaCheck('transcript', leaving.transcript);
+    summary.stages.after_leaving = { asked: leaving.asked, ...(leaving.choice ? { choice: leaving.choice } : {}), sources: leaving.sources };
     summary.stages.common_symptoms = {
       supplement: Boolean(commonFacts),
       selected: commonState.selected,
@@ -117,15 +125,18 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
       over: commonState.over,
       unknown: commonState.unknown,
       interview_questions: interview.entries.length,
-      extra_questions: transcript.entries.filter((entry) => entry.gap === COMMON_GAP).length,
+      extra_questions: commonRun.transcript.entries.filter((entry) => entry.gap === COMMON_GAP).length,
     };
 
     const context = { survey, transcript };
     let revision;
+    // 手順の抜けの質問（ページの質）。合格のあと 1 回だけ。答えで書き直す回と、その差し戻し 1 回を足す
+    let gapStage = null;
+    let lastRound = MAX_RESENDS + 1;
     let lastFindings = [];
     let previousManual = null;
     let previousVerification = null;
-    for (let round = 1; round <= MAX_RESENDS + 1; round += 1) {
+    for (let round = 1; round <= lastRound; round += 1) {
       // ページ単位で書くので、止まっても書き終えた部分はやり直さない
       const pieces = {
         get: (name) => (existsSync(pathOf(`writer-${round}-${name}`)) ? readJson(pathOf(`writer-${round}-${name}`)) : undefined),
@@ -159,6 +170,21 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
       const scores = manualScorer.summarize(manualScorer.score(manual, null, context));
       summary.rounds.push({ round, verified: scope.length, retiree_hits: retireeHits, counts: result.counts, unanswered: result.unanswered, fact_changes_reverted: edited.changes.length, manual: scores });
 
+      if (result.passed && !gapStage) {
+        gapStage = await once('page-gaps', null, () => runPageGapsLive({ manual, transcript, hidden, commonFacts, pageFacts, client: api, record }));
+        transcript = schemaCheck('transcript', gapStage.transcript);
+        context.transcript = transcript;
+        const fixed = Object.keys(gapStage.fixes);
+        summary.stages.page_gaps = { supplement: Boolean(pageFacts), asked: gapStage.asked, rewritten: fixed, round };
+        if (fixed.length) {
+          revision = { ...buildRevision(manual, []), page_fixes: gapStage.fixes };
+          lastFindings = [];
+          previousManual = manual;
+          previousVerification = verification;
+          lastRound = round + 2;
+          continue;
+        }
+      }
       if (result.passed) {
         // 模擬評価。実際の /hikitsugi:start では、前任者がページごとに確認する
         const phrases = await once('search-index', null, () => runPhraseWriterLive({ manual, retiree: RETIREE, client: api, record }));
@@ -167,6 +193,13 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
         summary.search_phrases = reviewed.search_index.reduce((sum, entry) => sum + entry.phrases.length, 0);
         save('manual-final', reviewed);
         summary.review = { mode: '模擬（全ページ このままでよい）', pages: reviewed.symptom_pages.length };
+        summary.questions = {
+          interview: interview.entries.length,
+          common: transcript.entries.filter((entry) => entry.gap === COMMON_GAP).length,
+          after_leaving: transcript.entries.filter((entry) => entry.gap === AFTER_LEAVING_GAP).length,
+          page_gaps: transcript.entries.filter((entry) => entry.gap === PAGE_GAP).length,
+        };
+        save('transcript-final', transcript);
         summary.before_leaving = reviewed.before_leaving?.length ?? 0;
         summary.location_warnings = locationWarnings(reviewed);
         let prepared;
@@ -187,7 +220,7 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
       previousManual = manual;
       previousVerification = verification;
     }
-    return finish('not_passed', { resends: MAX_RESENDS, unresolved: lastFindings.map((f) => ({ statement: f.statement, verdict: f.verdict })) });
+    return finish('not_passed', { resends: lastRound - 1, unresolved: lastFindings.map((f) => ({ statement: f.statement, verdict: f.verdict })) });
   } catch (error) {
     if (error instanceof UsageError) throw error;
     return finish('error', { failed_stage: stage, error: maskCredentials(error.message, input).masked });

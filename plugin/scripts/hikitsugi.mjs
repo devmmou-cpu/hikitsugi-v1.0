@@ -20,6 +20,8 @@ import { plainProblems } from '../lib/plain-check.mjs';
 import { pagesForPhrases, phraseProblems, withSearchIndex } from '../lib/search-index.mjs';
 import { applyRetireeCheck } from '../lib/retiree-check.mjs';
 import { composeProcedures, libraryForAgents, pageScopeNotes } from '../lib/procedures.mjs';
+import { CHECK_LABELS, missingNote, PAGE_GAP_LIMIT, pageGapComment, pageGapQuestion, pageGaps, recordPageGap } from '../lib/page-quality.mjs';
+import { AFTER_LEAVING_CHOICES, AFTER_LEAVING_DETAIL, AFTER_LEAVING_QUESTION, needsAfterLeaving, recordAfterLeaving } from '../lib/after-leaving.mjs';
 import { approvedSymptoms, COMMON_GAP, commonSymptomsOf, commonUnknownLines, followupQuestion, nextFollowup, recordFollowup, recordSelection, selectionEvidenceProblems, selectionQuestion } from '../lib/common-symptoms.mjs';
 import { appendEntry, appendReviewEntry, checkNextQuestion, emptyTranscript, interviewProgress, QUESTION_LIMIT, REVIEW_GAP } from '../lib/transcript.mjs';
 import { validate } from '../lib/validate.mjs';
@@ -85,6 +87,10 @@ export function nextStep(work) {
     return state.common.stage === 'select' ? { step: 'common-symptoms', stage: 'select' } : { step: 'common-symptoms', stage: 'followup', asked: state.common.asked.length, left: state.common.ask.length - state.common.asked.length };
   }
   const round = state.round ?? 1;
+  // 退職後に聞く道。20 問の中に答えがなければ、書き始める前に 1 問だけ選択から聞く
+  if (!state.update && !state.passed && round === 1 && !has('manual-1.json') && !has(partFile(1, 'common')) && has('transcript.json') && needsAfterLeaving(readJson(join(work, 'transcript.json')))) {
+    return { step: 'after-leaving', question: AFTER_LEAVING_QUESTION, choices: AFTER_LEAVING_CHOICES.map(({ value, label, description }) => ({ value, label, description })), detail: AFTER_LEAVING_DETAIL };
+  }
   if (!has(`manual-${round}.json`)) {
     const part = writerParts(work, state, round).find((name) => !isChecked(work, partFile(round, name)));
     return { step: 'writer', round, part, ...(has(partFile(round, part)) ? { unchecked: true } : {}) };
@@ -94,8 +100,11 @@ export function nextStep(work) {
   if (!state.passed && !isChecked(work, `verification-${round}.json`)) return { step: 'verifier', round, unchecked: true };
   // 行き止まりは言い方を作る前に聞く。書き直すと言い方を作り直すことになるため
   if (state.passed && !state.update && !state.review?.done) {
-    const pending = pendingDeadEnds(readJson(join(work, 'manual-final.json')), state);
+    const final = readJson(join(work, 'manual-final.json'));
+    const pending = pendingDeadEnds(final, state);
     if (pending.length) return deadEndStep(pending, state);
+    const gaps = pendingPageGaps(final, state);
+    if (gaps.length) return pageGapStep(gaps, state);
   }
   if (state.passed && !readJson(join(work, 'manual-final.json')).search_index) return { step: 'phrases' };
   if (state.passed && !state.review?.done) {
@@ -727,6 +736,8 @@ function reviewShow(work, [pageId]) {
     ...section('手順', [...fields.branches, ...fields.steps, ...fields.goal, ...fields.exceptions]),
     ...(contact ? ['【それでもだめなら】', `${contact.name} ${contact.phone}`.trim(), ...textsOf(manual, [page.fallback.message])] : []),
     ...section('この症状で使う会社の情報', fields.info_rows),
+    // 物に触る手順で、記録がないもの。画面と同じ決まった文を出す
+    ...(missingNote(page, manual) ? ['【記録がないもの】', missingNote(page, manual)] : []),
   ].join('\n');
 }
 
@@ -782,6 +793,79 @@ function reviewFix(work, [pageId], stdin) {
     review: { ...state.review, pages },
   });
   return `記録しました（${added.entry.id}）。${pageId} を書き直します`;
+}
+
+// ---- 手順の抜け（ページの質） ----
+/** まだ聞いていない手順の抜け。聞くのは全部で PAGE_GAP_LIMIT（3 問）まで。同じ手順の文のページは 1 問にまとめる。 */
+function pendingPageGaps(manual, state) {
+  const asked = state.page_gap_questions ?? 0;
+  if (asked >= PAGE_GAP_LIMIT) return [];
+  return pageGaps(manual).filter((gap) => !gap.pages.some((page) => state.page_gaps?.[page])).slice(0, PAGE_GAP_LIMIT - asked);
+}
+
+function pageGapStep(gaps, state) {
+  const [next] = gaps;
+  return { step: 'page-gap', page: next.page, pages: next.pages, title: next.title, procedure: next.step, missing: next.missing.map((key) => CHECK_LABELS[key]), question: pageGapQuestion(next), left: gaps.length, asked: state.page_gap_questions ?? 0, limit: PAGE_GAP_LIMIT };
+}
+
+/** 聞き終えたら、答えのあったページをまとめて書き直す。行き止まりと同じ回の仕組みを使う。 */
+function startPageGapRound(work, state, manual) {
+  const open = Object.entries(state.page_gaps).filter(([, answer]) => !answer.applied);
+  const fixes = Object.fromEntries(open.filter(([, answer]) => answer.answered).map(([page, { comment, evidence }]) => [page, { comment, evidence }]));
+  const applied = Object.fromEntries(Object.entries(state.page_gaps).map(([page, answer]) => [page, { ...answer, applied: true }]));
+  const todo = Object.keys(fixes);
+  if (!todo.length) {
+    writeJson(join(work, 'state.json'), { ...state, page_gaps: applied });
+    return '書き直すページはありません。記録がないことは、画面に決まった文で出します';
+  }
+  const round = state.round;
+  writeJson(join(work, `findings-${round}.json`), buildRevision(manual, []));
+  const pages = Object.fromEntries(Object.entries(state.review?.pages ?? {}).filter(([page]) => !todo.includes(page)));
+  writeJson(join(work, 'state.json'), { ...state, passed: false, round: round + 1, round_base: round, todo, dead_end_fixes: fixes, page_gaps: applied, ...(state.review ? { review: { ...state.review, pages } } : {}) });
+  return `${todo.length} ページを、答えのとおりに書き直します：${todo.join('、')}`;
+}
+
+function recordPageGapAnswer(work, pageId, { answer, status }) {
+  const state = readJson(join(work, 'state.json'));
+  if (!state.passed || state.update) throw new Problem('手順の抜けを聞ける段階ではありません');
+  const manual = readJson(join(work, 'manual-final.json'));
+  const gap = pendingPageGaps(manual, state).find((candidate) => candidate.page === pageId);
+  if (!gap) throw new Problem(`まだ聞いていない手順の抜けのページではありません：${pageId}`);
+  const transcriptPath = join(work, 'transcript.json');
+  let added;
+  try {
+    added = recordPageGap(readJson(transcriptPath), gap, { answer, status, answeredAt: new Date().toISOString() });
+  } catch (error) {
+    throw new Problem(error.message);
+  }
+  checkSchema('transcript', added.transcript);
+  writeJson(transcriptPath, added.transcript);
+  const recorded = Object.fromEntries(gap.pages.map((page) => [page, { evidence: added.entry.id, answered: status === 'answered', comment: pageGapComment(gap, added.entry.id) }]));
+  const next = { ...state, page_gaps: { ...state.page_gaps, ...recorded }, page_gap_questions: (state.page_gap_questions ?? 0) + 1 };
+  writeJson(join(work, 'state.json'), next);
+  const left = pendingPageGaps(manual, next).length;
+  return left ? `記録しました（${added.entry.id}）。残り ${left} 問です` : `記録しました（${added.entry.id}）。${startPageGapRound(work, next, manual)}`;
+}
+
+const pageGapAnswer = (work, [pageId], stdin) => recordPageGapAnswer(work, pageId, { answer: stdin, status: 'answered' });
+const pageGapUnknown = (work, [pageId]) => recordPageGapAnswer(work, pageId, { answer: '分からない。', status: 'unknown' });
+
+// ---- 退職後に聞く道 ----
+function afterLeaving(work, [choice], stdin) {
+  const state = readJson(join(work, 'state.json'));
+  if (!state.interview_done || (state.common && state.common.stage !== 'done') || state.update) throw new Problem('退職後のことを聞ける段階ではありません');
+  const transcriptPath = join(work, 'transcript.json');
+  const transcript = readJson(transcriptPath);
+  if (!needsAfterLeaving(transcript)) throw new Problem('退職後のことは、もう聞いています');
+  let added;
+  try {
+    added = recordAfterLeaving(transcript, { choice, detail: stdin, answeredAt: new Date().toISOString() });
+  } catch (error) {
+    throw new Problem(error.message);
+  }
+  checkSchema('transcript', added.transcript);
+  writeJson(transcriptPath, added.transcript);
+  return `記録しました（${added.entry.id}）`;
 }
 
 // ---- 行き止まり ----
@@ -1285,6 +1369,9 @@ const COMMANDS = {
   'review-ok': reviewOk,
   'review-fix': reviewFix,
   'dead-end-answer': deadEndAnswer,
+  'page-gap-answer': pageGapAnswer,
+  'page-gap-unknown': pageGapUnknown,
+  'after-leaving': afterLeaving,
   'dead-end-unknown': deadEndUnknown,
   'update-start': updateStart,
   history,
@@ -1311,7 +1398,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const [command, ...args] = process.argv.slice(2);
   const work = resolve(process.env.HIKITSUGI_WORK ?? 'hikitsugi-work');
   try {
-    const stdin = ['record', 'review-fix', 'dead-end-answer', 'update-fix', 'update-add', 'update-add-contact', 'update-add-device', 'update-memo'].includes(command) ? readFileSync(0, 'utf8') : '';
+    const stdin = ['record', 'review-fix', 'dead-end-answer', 'page-gap-answer', 'after-leaving', 'update-fix', 'update-add', 'update-add-contact', 'update-add-device', 'update-memo'].includes(command) ? readFileSync(0, 'utf8') : '';
     console.log(run(command, args, { work, stdin }));
   } catch (error) {
     if (error instanceof Problem) {

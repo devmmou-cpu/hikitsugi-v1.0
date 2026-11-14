@@ -103,8 +103,15 @@ test('流れ：20 問のあとに一覧を出し、選ばれた症状だけ追�
     assert.throws(() => hikitsugi('common-record', ['answered'], 'パスワードは abcd1234 です。'), /パスワードの本体/);
     hikitsugi('common-record', ['unknown']);
     assert.match(hikitsugi('common-record', ['later']), /追加 3 \/ 3 問）。定番の症状の聞き取りを終えました/);
+    // 書き始める前に、退職後に聞く道を 1 問聞く（20 問に答えがないため）
+    assert.equal(nextStep(work).step, 'after-leaving');
+    hikitsugi('after-leaving', ['unknown']);
     assert.equal(nextStep(work).step, 'writer');
-    const { entries } = read('transcript.json');
+    const all = read('transcript.json').entries;
+    // 最後の 1 件は退職後に聞く道の記録（GAP-902）。定番の症状の記録はその前まで
+    assert.equal(all.at(-1).gap, 'GAP-902');
+    assert.deepEqual(all.at(-1).covers, ['CHK-40']);
+    const entries = all.slice(0, -1);
     assert.equal(entries.length, 5);
     assert.ok(entries.slice(1).every((entry) => entry.gap === 'GAP-900' && entry.covers[0] === 'CHK-37'));
     assert.ok(entries.length - 4 < QUESTION_LIMIT, '本体は 1 問だけ');
@@ -126,14 +133,21 @@ test('流れ：本体が 20 問で終わっても、選ぶ段と追加の質問�
     hikitsugi('common-select', [], '1');
     hikitsugi('common-record', ['answered'], '印刷できないときは、イタチ事務機に電話します。');
     assert.equal(read('transcript.json').entries.length, QUESTION_LIMIT + 2);
+    // 書き始める前に、退職後に聞く道を 1 問聞く（20 問に答えがないため）
+    assert.equal(nextStep(work).step, 'after-leaving');
+    hikitsugi('after-leaving', ['unknown']);
     assert.equal(nextStep(work).step, 'writer');
   }));
 
 test('流れ：一覧に「分からない」と答えたら、追加では聞かず、「まだ分かっていないこと」に 1 行で出る', () =>
   interviewed(({ work, hikitsugi, read }) => {
     assert.match(hikitsugi('common-select', ['unknown']), /「まだ分かっていないこと」に 1 行で載せます/);
+    // 書き始める前に、退職後に聞く道を 1 問聞く（20 問に答えがないため）
+    assert.equal(nextStep(work).step, 'after-leaving');
+    hikitsugi('after-leaving', ['unknown']);
     assert.equal(nextStep(work).step, 'writer');
-    const entry = read('transcript.json').entries.at(-1);
+    // 最後の 1 件は退職後に聞く道の記録なので、その前を見る
+    const entry = read('transcript.json').entries.at(-2);
     assert.equal(entry.status, 'unknown');
     assert.deepEqual(commonSymptomsOf(read('state.json').common), { selection: entry.id, unknown: true, items: [] });
   }));

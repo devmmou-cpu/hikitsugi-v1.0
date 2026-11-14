@@ -6,6 +6,7 @@ import { assembleManual, checkCommon, checkPage, commonSchema, contactSchema, de
 import { additionProblems, applySymptomAnswer, basisProblems, symptomGaps } from '../../plugin/lib/symptom-check.mjs';
 import { selectionEvidenceProblems } from '../../plugin/lib/common-symptoms.mjs';
 import { coverageLeaks } from '../../plugin/lib/coverage-check.mjs';
+import { deadEndFixProblems } from '../../plugin/lib/dead-end.mjs';
 import { pagesForPhrases, phraseProblems } from '../../plugin/lib/search-index.mjs';
 import { composeProcedures, libraryForAgents } from '../../plugin/lib/procedures.mjs';
 import { buildRequest, callAgent, clientOf, LiveFailure, loadAgent, responseSchema, stripUnsupported, tagged } from './adapters/live.mjs';
@@ -214,6 +215,8 @@ export async function runWriterLive({ survey, transcript, companyName, retiree, 
 
   const previous = revision.previous_manual;
   const owners = ownersOf(previous, revision.findings);
+  // 手順の抜けの答えで直すページ（page_fixes）。指摘がなくても書き直す
+  for (const page of Object.keys(revision.page_fixes ?? {})) if (!owners.has(page)) owners.set(page, []);
   const rewritten = { pages: {} };
   const contacts = previous.contacts.map(({ id, name, role }) => ({ id, name, role: previous.statements.find((s) => s.id === role)?.text }));
   await pool([...owners], PAGE_CONCURRENCY, async ([owner, findings]) => {
@@ -225,7 +228,14 @@ export async function runWriterLive({ survey, transcript, companyName, retiree, 
     }
     const page = previous.symptom_pages.find((candidate) => candidate.id === owner);
     const entry = { id: page.id, category: page.category, symptom: previous.statements.find((s) => s.id === page.title).text };
-    rewritten.pages[owner] = await once(owner, { part: 'page', entry, contacts, revision: taskRevision }, (output) => checkPage(output, entry, previous.contacts, sources, { retiree }));
+    const fix = revision.page_fixes?.[owner];
+    if (fix) taskRevision.page_fix = { page: owner, comment: fix.comment, evidence: fix.evidence };
+    rewritten.pages[owner] = await once(owner, { part: 'page', entry, contacts, revision: taskRevision }, (output) => {
+      const checked = checkPage(output, entry, previous.contacts, sources, { retiree });
+      // 答えを根拠にしていなければ、書き直しにならない
+      if (fix) checked.problems.push(...deadEndFixProblems(checked.output.statements, owner, fix));
+      return checked;
+    });
   });
   return fillLeaks(mergeRewritten(previous, rewritten));
 }

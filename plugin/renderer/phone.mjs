@@ -20,6 +20,7 @@ import { fileSize, oversizeMessage, PHONE_FILE_LIMIT, writeWithinLimit } from '.
 import { contactProblems, pageProblems } from '../lib/page-check.mjs';
 import { firstStepFigures } from '../lib/figures.mjs';
 import { pageScopeNotes } from '../lib/procedures.mjs';
+import { missingNote } from '../lib/page-quality.mjs';
 import { notConsultedLabels } from '../lib/common-symptoms.mjs';
 import { NO_PAGE_HEADING, NO_PAGE_NOTE, MEMO_NO_JS, actionHtml, contactGuide, hoursIconName, BADGE_ICONS, BADGE_LABELS, CATEGORY_LABELS, checkInput, compactCss, esc, evidenceLines, ICONS, infoTables, makeContext, pageTerms, stepParts, telHtml } from './render.mjs';
 import { STYLES } from './styles.mjs';
@@ -210,6 +211,7 @@ function symptomHtml(ctx, page, fileTitle) {
     notes,
     info,
     steps,
+    missingNote(page, ctx.manual) ? `<p class="band">${esc(missingNote(page, ctx.manual))}</p>` : '',
     closing,
     noContact,
     MEMO_NO_JS,

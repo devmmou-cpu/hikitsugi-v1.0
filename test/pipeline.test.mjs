@@ -225,6 +225,8 @@ function pipelineClient({ verdicts }) {
       return first ? { action: 'ask', gap: 'GAP-001', covers: items, question: '質問' } : { action: 'finish', gap: '', covers: [], question: '' };
     }
     // 連絡先の名前と番号は根拠と照合されるので、それを含む事実を選ぶ
+    // 退職後の問いと手順の抜けの問いは、偽の田中さんでは「分からない」にする（書き直しを起こさない）
+    if (system.includes('模擬の担当者') && /退職したあと|のページの手順「/.test(JSON.stringify(params.messages))) return { fact_ids: [] };
     if (system.includes('模擬の担当者')) return { fact_ids: ['F-05'] };
     if (system.includes('phrase-writer')) {
       const body = JSON.stringify(params.messages);
@@ -405,6 +407,12 @@ test('/hikitsugi:start：段階をたどって取扱説明書まで進み、途�
     // 20 問のあとに定番の症状を選ぶ段がある（段 2）。ここでは「なし」
     assert.deepEqual(nextStep(work), { step: 'common-symptoms', stage: 'select' });
     assert.match(hikitsugi('common-select', [], 'なし'), /相談されたことがある症状：なし/);
+    // 書き始める前に、退職後に聞く道を 1 問聞く。電話番号やアドレスは記録しない
+    assert.equal(nextStep(work).step, 'after-leaving');
+    assert.throws(() => hikitsugi('after-leaving', ['yes'], '03-0000-0199 に電話してください'), /電話番号やアドレスは記録しません/);
+    assert.throws(() => hikitsugi('after-leaving', ['yes'], ''), /1 行で教えてください/);
+    hikitsugi('after-leaving', ['unknown']);
+    assert.throws(() => hikitsugi('after-leaving', ['unknown']), /もう聞いています/);
     // 共通部分、ページの順に、1回に1つずつ書く
     assert.deepEqual(nextStep(work), { step: 'writer', round: 1, part: 'common' });
     hikitsugi('writer-task', ['1', 'common']);
@@ -1279,6 +1287,7 @@ test('/hikitsugi:start：手順ページのない困りごとを Writer に聞�
     write('next.json', { action: 'finish', gap: '', covers: [], question: '', unfilled: [] });
     hikitsugi('check-next');
     hikitsugi('common-select', [], 'なし');
+    hikitsugi('after-leaving', ['unknown']);
 
     write('writer-1-common.json', noSelection(pieces().common));
     hikitsugi('check-writer', ['1', 'common']);

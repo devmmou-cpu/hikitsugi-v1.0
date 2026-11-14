@@ -4,6 +4,7 @@
 
 import { readFileSync } from 'node:fs';
 import { contactProblems, pageProblems, pageStatementIds, statementProblems, reassuranceProblems } from './page-check.mjs';
+import { afterLeavingProblems } from './after-leaving.mjs';
 import { composeStatements, contactEvidenceProblems, directionProblems, evidenceReader, loadLibrary, pageDetailProblems, stepSourceProblems } from './procedures.mjs';
 import { retireeContactProblems } from './retiree-check.mjs';
 import { hasCredential } from './transcript.mjs';
@@ -27,11 +28,11 @@ const objectOf = (properties) => ({ type: 'object', additionalProperties: false,
 const DEVICES = MANUAL_SCHEMA.properties.devices;
 const WRITER_DEVICES = { ...DEVICES, items: { ...DEVICES.items, required: [...DEVICES.items.required, 'credential_none'] } };
 
-/** 共通部分の出力の形。 */
+/** 共通部分の出力の形。after_leaving は前の版の出力を読めるよう、必須にしない。 */
 export const commonSchema = () => {
   const { contacts, routines, before_leaving: beforeLeaving } = MANUAL_SCHEMA.properties;
   const devices = WRITER_DEVICES;
-  return objectOf({
+  const schema = objectOf({
     page_plan: {
       $comment: '作る手順ページの一覧。symptom はページを書く担当へ渡す、症状の短い説明',
       type: 'array',
@@ -42,7 +43,10 @@ export const commonSchema = () => {
     routines,
     devices,
     before_leaving: beforeLeaving,
+    // 退職後に聞く道の 1 文。答えがなければ null
+    after_leaving: { type: ['string', 'null'], pattern: '^STM-\\d{3}$' },
   });
+  return { ...schema, required: schema.required.filter((key) => key !== 'after_leaving') };
 };
 
 /** 手順ページ1つの出力の形。 */
@@ -124,7 +128,8 @@ export function credentialNoneProblems(devices, statements, sources) {
 }
 
 /** 共通部分が使う文章の ID を返す。 */
-export const commonStatementIds = ({ contacts, routines, devices }) => [
+export const commonStatementIds = ({ contacts, routines, devices, after_leaving: afterLeaving }) => [
+  ...(afterLeaving ? [afterLeaving] : []),
   ...contacts.flatMap((c) => [c.role, c.hours, c.contract_location, c.what_to_tell].filter(Boolean)),
   ...routines.flatMap((r) => [r.title, ...r.steps]),
   ...devices.flatMap(deviceStatementIds),
@@ -150,6 +155,8 @@ export function checkCommon(output, sources, { library = loadLibrary(), retiree 
   if (new Set(ids).size !== ids.length) problems.push('page_plan の id が重複しています');
   const piece = { statements, contacts: output.contacts };
   problems.push(...statementProblems(statements, retiree), ...contactProblems(piece), ...retireeContactProblems(output.contacts, retiree), ...contactEvidenceProblems(output.contacts, sources), ...credentialNoneProblems(output.devices, statements, sources));
+  // 退職後に聞く道。欄がなければ null と同じに扱う（この段で「聞いてよい」と答えていれば、書くよう求める）
+  problems.push(...afterLeavingProblems(output, statements, sources.transcript));
   // 退職前にやることは本人に見せる一覧。根拠は実際の回答だけで、認証情報を書かない
   const answered = new Set(sources.transcript.entries.filter((entry) => entry.status === 'answered').map((entry) => entry.id));
   output.before_leaving.forEach(({ text, evidence }, index) => {
@@ -281,6 +288,7 @@ export function assembleManual(common, pages, header) {
     routines: placedCommon.rest.routines,
     devices: placedCommon.rest.devices,
     before_leaving: placedCommon.rest.before_leaving,
+    ...(placedCommon.rest.after_leaving ? { after_leaving: placedCommon.rest.after_leaving } : {}),
     glossary: [],
   };
 }
@@ -309,7 +317,7 @@ export function previousPiece(manual, owner) {
   if (device) return { statements: pick(deviceStatementIds(device)), device };
   if (owner === 'common') {
     const { contacts, routines, devices } = manual;
-    return { statements: pick(commonStatementIds(manual)), contacts, routines, devices, before_leaving: manual.before_leaving ?? [] };
+    return { statements: pick(commonStatementIds(manual)), contacts, routines, devices, before_leaving: manual.before_leaving ?? [], after_leaving: manual.after_leaving ?? null };
   }
   const page = manual.symptom_pages.find((candidate) => candidate.id === owner);
   // 更新で足す新しいページには、前の版がない
@@ -332,6 +340,8 @@ export function mergeRewritten(previous, rewritten) {
     const placed = place(piece, commonStatementIds, new Set(previousPiece(previous, 'common').statements.map((s) => s.id)), allocate);
     statements.push(...placed.statements);
     merged = { ...merged, ...placed.rest };
+    // 退職後に聞く道がなければ欄ごと外す（manual.json では任意の欄）
+    if (!merged.after_leaving) delete merged.after_leaving;
   }
   for (const [id, output] of Object.entries(rewritten.contacts ?? {})) {
     const placed = place(output, (piece) => contactStatementIds(piece.contact), new Set(previousPiece(previous, id).statements.map((s) => s.id)), allocate);
