@@ -1,0 +1,4 @@
+#!/bin/sh
+# コミットの前に、点検（npm run gate）に合格した中身と同じかを照らす。違えば止める。
+# 設定：git config core.hooksPath .githooks（CLAUDE.md）
+exec node scripts/gate.mjs --check-commit

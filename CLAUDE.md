@@ -5,7 +5,8 @@
 大会に提出した版は `submission-20261108` のタグ。提出したリポジトリは remote の `submitted` で、変更しない。開発は remote の `origin`（hikitsugi-next）で続ける。
 
 ## コマンド
-- `npm test`：全テスト。依存なし、ネットワークなし
+- `npm test`：全テスト。依存なし、ネットワークなし。撮影のテスト（Chrome）は、ほかのテストのあとに 1 つずつ流す（`scripts/run-tests.mjs`）。止まれば時間切れで失敗にする
+- `npm run gate`：コミットの前の点検（全テストと `check-secrets`）。変更をすべて `git add` してから流す。合格した中身（index の tree）だけを記録し、pre-commit フック（`.githooks/pre-commit`）が記録と照らして、違えばコミットを止める。フックの設定は `git config core.hooksPath .githooks`。`--no-verify` でのコミットはしない
 - `node scripts/check-secrets.mjs`：push 前の秘密情報の点検
 - `node eval/run.mjs --set okojo --target verifier --adapter oracle`：評価の実行（`--help` で一覧）
 
@@ -40,7 +41,7 @@
 
 ## 開発の約束
 - コードのコメント、文書は日本語
-- コミット前に `npm test` を通す
+- コミット前に `npm run gate` を通す（点検の出力をパイプでつないで、失敗を見落とさない。コミットの可否は gate の記録だけで決まる）
 - 作業は作業用ブランチで行う。push は origin にだけ。本人の指示があった作業について行う
 - push の前に必ず `npm test` と `node scripts/check-secrets.mjs` を通す。.env や秘密情報を含めない
 - API キーは `.env` にだけ置く（`docs/api-key-setup.md`）

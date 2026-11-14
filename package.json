@@ -6,7 +6,8 @@
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
-    "test": "node --import ./test/setup-identity.mjs --test \"test/**/*.test.mjs\"",
+    "test": "node scripts/run-tests.mjs",
+    "gate": "node scripts/gate.mjs",
     "eval": "node eval/run.mjs"
   }
 }

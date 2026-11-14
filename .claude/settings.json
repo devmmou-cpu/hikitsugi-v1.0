@@ -7,9 +7,9 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/scripts/hooks/pre-push-test.mjs\"",
-            "timeout": 600,
+            "timeout": 1800,
             "onFailure": "block",
-            "statusMessage": "git push の前のテストを確認しています"
+            "statusMessage": "git push の前のテストと、git commit の指定を確認しています"
           }
         ]
       }
