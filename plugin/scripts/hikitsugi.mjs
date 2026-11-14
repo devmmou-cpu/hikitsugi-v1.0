@@ -19,7 +19,7 @@ import { bodyFields } from '../lib/page-check.mjs';
 import { plainProblems } from '../lib/plain-check.mjs';
 import { pagesForPhrases, phraseProblems, withSearchIndex } from '../lib/search-index.mjs';
 import { applyRetireeCheck } from '../lib/retiree-check.mjs';
-import { composeProcedures, libraryForAgents } from '../lib/procedures.mjs';
+import { composeProcedures, libraryForAgents, pageScopeNotes } from '../lib/procedures.mjs';
 import { approvedSymptoms, COMMON_GAP, commonSymptomsOf, commonUnknownLines, followupQuestion, nextFollowup, recordFollowup, recordSelection, selectionEvidenceProblems, selectionQuestion } from '../lib/common-symptoms.mjs';
 import { appendEntry, appendReviewEntry, checkNextQuestion, emptyTranscript, interviewProgress, QUESTION_LIMIT, REVIEW_GAP } from '../lib/transcript.mjs';
 import { validate } from '../lib/validate.mjs';
@@ -575,7 +575,8 @@ function mergeEdits(work, [round]) {
   writeJson(join(work, `plain-findings-${round}.json`), remaining);
   const notes = [`やさしく直しました。事実が変わったので元に戻した文章：${changes.length} 件`];
   // 手順の形が崩れた直し（禁止の文になった、2 文になったなど）は、使わなかった文を見せる。黙って外さない
-  for (const change of changes.filter((entry) => entry.rejected !== undefined)) notes.push(`手順の形でなくなったので、元の文のまま残しました：${change.statement}（直した文「${change.rejected}」は使っていません）`);
+  const REJECT_REASONS = { 手順の形: '手順の形でなくなったので', 向きの文: 'どこからどこへが読み取れなくなるので' };
+  for (const change of changes.filter((entry) => entry.rejected !== undefined)) notes.push(`${REJECT_REASONS[change.missing[0]] ?? '事実が変わるので'}、元の文のまま残しました：${change.statement}（直した文「${change.rejected}」は使っていません）`);
   if (problems.long_sentences.length || problems.unexplained_terms.length) {
     notes.push(`残った問題：長い文 ${problems.long_sentences.length} 件、説明のない語 ${problems.unexplained_terms.length} 件（plain-findings-${round}.json）`);
   }
@@ -713,7 +714,9 @@ function reviewShow(work, [pageId]) {
   const page = manual.symptom_pages.find((candidate) => candidate.id === pageId);
   if (!page) throw new Problem(`手順ページがありません：${pageId}`);
   const fields = bodyFields(page);
-  const section = (label, ids) => (ids.length ? [`【${label}】`, ...textsOf(manual, ids)] : []);
+  // 戻す範囲の記録がないときの決まった文は、画面と同じく向きの文の次に出す
+  const scope = pageScopeNotes(page, manual);
+  const section = (label, ids) => (ids.length ? [`【${label}】`, ...ids.flatMap((id) => [...textsOf(manual, [id]), ...(scope.has(id) ? [scope.get(id)] : [])])] : []);
   const contact = page.fallback ? manual.contacts.find((candidate) => candidate.id === page.fallback.contact) : null;
   return [
     `${pageId}：${textsOf(manual, [page.title])[0]}`,

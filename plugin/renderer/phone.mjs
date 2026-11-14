@@ -19,6 +19,7 @@ import { pathToFileURL } from 'node:url';
 import { fileSize, oversizeMessage, PHONE_FILE_LIMIT, writeWithinLimit } from '../lib/limits.mjs';
 import { contactProblems, pageProblems } from '../lib/page-check.mjs';
 import { firstStepFigures } from '../lib/figures.mjs';
+import { pageScopeNotes } from '../lib/procedures.mjs';
 import { notConsultedLabels } from '../lib/common-symptoms.mjs';
 import { NO_PAGE_HEADING, NO_PAGE_NOTE, MEMO_NO_JS, actionHtml, contactGuide, hoursIconName, BADGE_ICONS, BADGE_LABELS, CATEGORY_LABELS, checkInput, compactCss, esc, evidenceLines, ICONS, infoTables, makeContext, pageTerms, stepParts, telHtml } from './render.mjs';
 import { STYLES } from './styles.mjs';
@@ -164,9 +165,11 @@ function symptomHtml(ctx, page, fileTitle) {
   const internal = contact?.id.startsWith('INH-');
   const bands = (ids) => ids.map((id) => `<p class="band">${ctx.text(id)}</p>`).join('\n');
   const goal = (id) => (id ? `<p class="goal">${ctx.text(id)}</p>` : '');
+  const scope = pageScopeNotes(page, ctx.manual);
+  const scopeNote = (id) => (scope.has(id) ? `<p class="step-note">${esc(scope.get(id))}</p>` : '');
   const list = (ids) => ids.map((id) => {
     const [body, note] = stepParts(ctx.raw(id));
-    return `<li>${actionHtml(body, ctx.words)}${note ? `<p class="step-note">${actionHtml(note, ctx.words)}</p>` : ''}</li>`;
+    return `<li>${actionHtml(body, ctx.words)}${note ? `<p class="step-note">${actionHtml(note, ctx.words)}</p>` : ''}${scopeNote(id)}</li>`;
   }).join('\n');
 
   // 番号は読む順に振るので、上から順に組み立てる
@@ -178,7 +181,7 @@ function symptomHtml(ctx, page, fileTitle) {
   const leading = contactLeads ? contactPart() : '';
   const figures = firstStepFigures(page, ctx.manual);
   const first = hasFirst
-    ? `<section class="part first">\n<h2>${number()} まずこれだけ</h2>\n${page.first_lead ? `<p class="note">${esc(page.first_lead)}</p>\n` : ''}${page.first_steps.map((id) => `<p class="first-body">${actionHtml(ctx.raw(id), ctx.words)}${figures.get(id) ?? ''}</p>`).join('\n')}\n${goal(page.first_goal)}\n</section>`
+    ? `<section class="part first">\n<h2>${number()} まずこれだけ</h2>\n${page.first_lead ? `<p class="note">${esc(page.first_lead)}</p>\n` : ''}${page.first_steps.map((id) => `<p class="first-body">${actionHtml(ctx.raw(id), ctx.words)}${figures.get(id) ?? ''}</p>${scopeNote(id)}`).join('\n')}\n${goal(page.first_goal)}\n</section>`
     : '';
   const reply = `<section class="part">\n<h2>社員に返す文</h2>\n${copyBoxHtml(ctx.text(page.reply_to_staff))}\n</section>`;
   const notes = page.notes.length ? `<section class="part">\n<h2>先に知っておくこと</h2>\n<ul class="notes">\n${page.notes.map((id) => `<li>${ctx.text(id)}</li>`).join('\n')}\n</ul>\n</section>` : '';

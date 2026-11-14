@@ -16,6 +16,7 @@ import { oversizeMessage, PC_FILE_LIMIT, writeWithinLimit } from '../lib/limits.
 import { forDisplay } from '../lib/display.mjs';
 import { callScriptProblems, replyProblems } from '../lib/reply.mjs';
 import { firstStepFigures } from '../lib/figures.mjs';
+import { pageScopeNotes, routineScopeNotes } from '../lib/procedures.mjs';
 import { latestUpdateOf, UPDATE_KIND_LABELS } from '../lib/update.mjs';
 import { notConsultedLabels } from '../lib/common-symptoms.mjs';
 
@@ -541,12 +542,13 @@ const termAnchor = (ctx, page, term) => `g-${page.id}-${ctx.manual.glossary.inde
 function firstHtml(ctx, page, number) {
   const many = page.first_steps.length > 1;
   const figures = firstStepFigures(page, ctx.manual);
+  const scope = pageScopeNotes(page, ctx.manual);
   return [
     '<section class="first">',
     `<h3 class="first-kicker">${number} まずこれだけ <span class="eta">1分</span></h3>`,
     page.first_lead ? `<p class="first-lead">${esc(page.first_lead)}</p>` : '',
     `<div class="first-steps${many ? ' is-many' : ''}">`,
-    page.first_steps.map((id) => `<p class="first-body"><span>${actionHtml(ctx.raw(id), ctx.words)}${figures.get(id) ?? ''}</span></p>`).join('\n'),
+    page.first_steps.map((id) => `<p class="first-body"><span>${actionHtml(ctx.raw(id), ctx.words)}${figures.get(id) ?? ''}</span></p>${scopeNoteHtml(scope, id)}`).join('\n'),
     '</div>',
     goalHtml(ctx, page.first_goal),
     '</section>',
@@ -583,7 +585,11 @@ export function stepParts(text) {
   return end < 0 || end === text.length - 1 ? [text, ''] : [text.slice(0, end + 1), text.slice(end + 1)];
 }
 
+/** 戻す範囲の記録がないときの決まった文。向きの文の下に出す。 */
+export const scopeNoteHtml = (notes, id) => (notes.has(id) ? `<p class="step-note scope-unknown">${esc(notes.get(id))}</p>` : '');
+
 function stepsHtml(ctx, page, stepTerms, heading) {
+  const scope = pageScopeNotes(page, ctx.manual);
   const items = page.steps.map((id, index) => {
     const [body, note] = stepParts(ctx.raw(id));
     // 短い手順だけ文節で折り返す。長い文を文節で切ると、かえって行の長さがばらつくため
@@ -600,6 +606,7 @@ function stepsHtml(ctx, page, stepTerms, heading) {
       `<span class="step-box">${icon('check')}</span>`,
       '</label>',
       noteHtml,
+      scopeNoteHtml(scope, id),
       terms,
       '</li>',
     ].join('');
@@ -796,11 +803,12 @@ function monthsAway(routine, asOfMonth) {
 }
 
 function routineHtml(ctx, routine) {
-  const steps = routine.steps.map((id, index) => `<li><span class="step-n">${index + 1}</span><span>${ctx.text(id)}</span></li>`);
+  const scope = routineScopeNotes(routine, ctx.manual);
+  const steps = routine.steps.map((id, index) => `<li><span class="step-n">${index + 1}</span><span>${ctx.text(id)}${scope.has(id) ? `<br>${esc(scope.get(id))}` : ''}</span></li>`);
   const details = steps.length
     ? `<details class="term routine-steps" open><summary class="tap"><span>手順を見る</span>${PLUS_MINUS}</summary><ol class="routine-list" role="list">${steps.join('')}</ol></details>`
     : '';
-  const title = `<h4 class="routine-title">${ctx.text(routine.title)}</h4>`;
+  const title = `<h4 class="routine-title">${ctx.text(routine.title)}</h4>${scope.has(routine.title) ? `<p class="note">${esc(scope.get(routine.title))}</p>` : ''}`;
   if (routine.frequency !== 'yearly') return `<article class="card routine" data-frequency="${esc(routine.frequency)}">${title}${details}</article>`;
   // 年表の左に月を太字でそろえる。題名に月が書いてあれば、同じことを2回出さない
   const showMonth = routine.month !== undefined && !ctx.raw(routine.title).includes(`${routine.month}月`);

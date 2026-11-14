@@ -11,7 +11,7 @@ export const loadLibrary = () => JSON.parse(readFileSync(LIBRARY_PATH, 'utf8'));
 /** モデルに渡す部分。承認の状態や確認者は渡さない。 */
 export const libraryForAgents = (library = loadLibrary()) => ({
   sequences: library.sequences,
-  procedures: library.procedures.map(({ id, use_for, text, kinds, needs_table }) => ({ id, use_for, text, kinds, needs_table })),
+  procedures: library.procedures.map(({ id, use_for, text, kinds, needs_table, directional }) => ({ id, use_for, text, kinds, needs_table, ...(directional ? { directional } : {}) })),
 });
 
 const compact = (text) => text.normalize('NFKC');
@@ -119,9 +119,99 @@ export function contactEvidenceProblems(contacts, { survey, transcript }) {
   ]);
 }
 
+// ---- 向きのある部品 ----
+// コピーのように、元と先を取り違えると控えを壊す部品（directional）。部品は「コピーするフォルダー」「コピー先」としか言わないので、
+// 前の手順に「〈元〉から、〈先〉へ〜してください。」の文があり、元と先の名前が、その文の根拠にあるときだけ使える。
+
+const DIRECTION = /([^、。]+?)\s*から[、\s]*([^。]+?)\s*(?:へ|に)\s*(?:手で)?\s*(?:コピー|戻|移|貼り付|上書き|入れ|置|保存)/u;
+// 「〈元〉を〈先〉へコピーする」。「を」の前が元になるのは、コピーと移動だけ（「ファイルを〜へ戻す」の「を」は物で、元の場所ではない）
+const DIRECTION_OBJECT = /([^、。]+?)\s*を[、\s]*([^。]+?)\s*(?:へ|に)\s*(?:手で)?\s*(?:コピー|移)/u;
+const RESTORE = /戻|復元/u;
+// 戻す範囲（フォルダーごとか、消したファイルだけか）を書いた文
+const SCOPE = /フォルダー?ごと|ファイルだけ|ファイルのみ|すべてのファイル|全部のファイル|ファイルを(?:すべて|全部)|範囲/u;
+export const SCOPE_UNKNOWN = '戻す範囲（フォルダーごとか、消したファイルだけか）は、記録がありません。';
+// 照合では、空白、長音（「フォルダ」と「フォルダー」）、「の」（「外付け USB」と「外付けの USB」）を区別しない
+const loose = (text) => text.normalize('NFKC').replace(/\s+/g, '').replace(/[ーの]/g, '');
+
+/** 文から、元と先の場所を読む。「〈元〉から、〈先〉へ戻して」の形でなければ null。 */
+export function directionOf(text) {
+  const match = String(text ?? '').match(DIRECTION) ?? String(text ?? '').match(DIRECTION_OBJECT);
+  if (!match) return null;
+  // 「消したファイルは〜から」の主題や、「毎週金曜：〜を」の見出しは、元の場所に含めない
+  const from = match[1].replace(/^.*[は：:]/u, '').trim() || match[1].trim();
+  const to = match[2].trim();
+  return from && to ? { from, to } : null;
+}
+
+const directionalParts = (library) => new Set(library.procedures.filter((part) => part.directional).map((part) => part.id));
+
+/** 手順の並び1つで、最初の向きのある部品と、その前にある向きの文。部品がなければ null。 */
+function directionUse(stepIds = [], byId, directional, heading = null) {
+  const index = stepIds.findIndex((id) => directional.has(byId.get(id)?.library));
+  if (index < 0) return null;
+  const before = [...(heading ? [heading] : []), ...stepIds.slice(0, index)].map((id) => byId.get(id)).filter((statement) => statement && !statement.library);
+  const found = before.map((statement) => ({ statement, direction: directionOf(statement.text) })).filter((item) => item.direction).at(-1) ?? null;
+  return { part: byId.get(stepIds[index]).library, statement: found?.statement ?? null, direction: found?.direction ?? null };
+}
+
+/**
+ * 向きのある部品の前に、根拠つきの向きの文があるかを確かめる。
+ * @param stepLists 手順の並びの一覧（ページの ① と ②、定期作業の手順）
+ * @param heading 手順の真上に出る題名の ID（定期作業）。題名の向きも数える。ページの題名は症状なので数えない
+ */
+export function directionProblems(ownerId, stepLists, statements, readEvidence, library = loadLibrary(), heading = null) {
+  const directional = directionalParts(library);
+  const byId = new Map(statements.map((statement) => [statement.id, statement]));
+  const problems = [];
+  for (const stepIds of stepLists) {
+    const use = directionUse(stepIds, byId, directional, heading);
+    if (!use) continue;
+    if (!use.statement) {
+      problems.push(`${ownerId}: ${use.part} は向きのある部品です（逆にすると控えを壊します）。部品の前の手順に「〈元の場所〉から、〈先の場所〉へ〜してください。」の文を、根拠にある場所の名前で置いてください。根拠に向きがなければ、部品を使わず、答えの文だけで書いてください`);
+      continue;
+    }
+    const texts = use.statement.evidence.filter((ref) => !ref.startsWith('LIB-')).map(readEvidence).filter((text) => text !== null).map(loose);
+    const { from, to } = use.direction;
+    if (loose(from) === loose(to)) problems.push(`${ownerId}: ${use.statement.id} の元と先が同じです（「${from}」）`);
+    for (const [label, place] of [['元', from], ['先', to]]) {
+      if (!texts.some((text) => text.includes(loose(place)))) problems.push(`${ownerId}: ${use.statement.id} の${label}の場所「${place}」が、その文の根拠にありません。根拠にある名前で書いてください`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * 戻す操作で、戻す範囲の記録がないときに、向きの文の下に出す決まった文。文章の ID ごとに返す。
+ * 範囲を書いた文がページ（または定期作業）のどこかにあれば出さない。
+ */
+export function scopeNotes(stepLists, ownStatementIds, statements, library = loadLibrary(), heading = null) {
+  const directional = directionalParts(library);
+  const byId = new Map(statements.map((statement) => [statement.id, statement]));
+  const scoped = ownStatementIds.filter(Boolean).some((id) => byId.get(id) && !byId.get(id).library && SCOPE.test(byId.get(id).text));
+  const notes = new Map();
+  if (scoped) return notes;
+  for (const stepIds of stepLists) {
+    const use = directionUse(stepIds, byId, directional, heading);
+    if (use?.statement && RESTORE.test(use.statement.text)) notes.set(use.statement.id, SCOPE_UNKNOWN);
+  }
+  return notes;
+}
+
+/** ページの向きの文の下に出す決まった文。 */
+export const pageScopeNotes = (page, manual, library = loadLibrary()) => scopeNotes([page.first_steps, page.steps], Object.values(bodyFields(page)).flat(), manual.statements, library);
+
+/** 定期作業の向きの文の下に出す決まった文。 */
+export const routineScopeNotes = (routine, manual, library = loadLibrary()) => scopeNotes([routine.steps], [routine.title, ...routine.steps], manual.statements, library, routine.title);
+
 /** ページ1つの、部品と表の問題。 */
 export function pageDetailProblems(page, statements, sources, library = loadLibrary()) {
-  return [...partProblems(page, statements, library), ...infoRowProblems(page, statements, evidenceReader(sources)), ...stepSourceProblems(page.id, [...page.first_steps, ...page.steps], statements)];
+  const readEvidence = evidenceReader(sources);
+  return [
+    ...partProblems(page, statements, library),
+    ...infoRowProblems(page, statements, readEvidence),
+    ...stepSourceProblems(page.id, [...page.first_steps, ...page.steps], statements),
+    ...directionProblems(page.id, [page.first_steps, page.steps], statements, readEvidence, library),
+  ];
 }
 
 /**
@@ -132,6 +222,7 @@ export function composeProcedures(manual, sources, { library = loadLibrary(), re
   const { statements, problems } = composeStatements(manual.statements, library);
   const composed = { ...manual, statements };
   for (const page of manual.symptom_pages) problems.push(...pageDetailProblems(page, statements, sources, library));
+  for (const routine of manual.routines ?? []) problems.push(...directionProblems(routine.id, [routine.steps], statements, evidenceReader(sources), library, routine.title));
   problems.push(...contactEvidenceProblems(manual.contacts, sources), ...manualProblems(composed, retiree));
   return { manual: composed, problems };
 }

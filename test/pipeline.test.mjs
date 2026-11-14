@@ -682,7 +682,7 @@ test('部品に評価セットの値や、許可されていない製品名が�
   const text = JSON.stringify(library);
   for (const name of ['オコジョ', 'OKOJO', 'okojo', 'クロテン', 'カワウソ', 'イタチ', 'イイズナ', 'フェレット', '田中', '佐藤']) assert.ok(!text.includes(name), name);
   assert.ok(!/192\.168\.|03-0000-01/.test(text));
-  const allowed = new Set(['Windows', 'Ctrl', 'C', 'V', 'OneDrive', 'file-copy', 'wifi-off', 'onedrive-resume', 'first', 'first_goal', 'branches', 'steps', 'goal', 'exceptions', 'kinds', 'first_steps', 'needs_table', 'true', 'false', 'null', 'E', 'Enter', 'Wi-Fi', 'PC', 'LIB-', 'network-drive', 'free-space', 'admin-screen', 'wifi', 'restart', 'schema_version', 'sequences', 'id', 'title', 'procedures', 'use_for', 'text', 'status', 'approved', 'reviewed_by', 'Okojyo-Soft', 'reviewed_on']);
+  const allowed = new Set(['Windows', 'Ctrl', 'C', 'V', 'OneDrive', 'file-copy', 'wifi-off', 'onedrive-resume', 'first', 'first_goal', 'branches', 'steps', 'goal', 'exceptions', 'kinds', 'first_steps', 'needs_table', 'directional', 'true', 'false', 'null', 'E', 'Enter', 'Wi-Fi', 'PC', 'LIB-', 'network-drive', 'free-space', 'admin-screen', 'wifi', 'restart', 'schema_version', 'sequences', 'id', 'title', 'procedures', 'use_for', 'text', 'status', 'approved', 'reviewed_by', 'Okojyo-Soft', 'reviewed_on']);
   const words = (text.match(/[A-Za-z][A-Za-z_-]*/g) ?? []).filter((word) => !allowed.has(word));
   assert.deepEqual(words, []);
 });

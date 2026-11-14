@@ -3,6 +3,7 @@
 
 import { GUARANTEE, isActionText } from './page-check.mjs';
 import { plainTextProblem } from './plain-check.mjs';
+import { directionOf } from './procedures.mjs';
 import { hasCredential } from './transcript.mjs';
 
 const PROTECTED = /[0-9０-９]+(?:[-:：.,／/年月日時分台名回週][0-9０-９]*)*|[A-Za-z][A-Za-z0-9_\\-]*(?:[.\\][A-Za-z0-9_\\-]+)*/gu;
@@ -11,6 +12,15 @@ const PROTECTED = /[0-9０-９]+(?:[-:：.,／/年月日時分台名回週][0-9�
 export const protectedTokens = (text) => [...new Set(text.match(PROTECTED) ?? [])];
 
 const compact = (text) => text.normalize('NFKC').replace(/\s+/g, '');
+const loose = (text) => compact(text).replace(/ー/g, '');
+
+/** 向きの文（「〈元〉から、〈先〉へ戻して」）の元と先が、直しで変わったか。向きの文でなければ false。 */
+export function directionChanged(before, after) {
+  const was = directionOf(before);
+  if (!was) return false;
+  const now = directionOf(after);
+  return !now || loose(now.from) !== loose(was.from) || loose(now.to) !== loose(was.to);
+}
 
 /** 元の文章にあった語のうち、直したあとの文章からなくなったものを返す。 */
 export function missingTokens(before, after, extra = []) {
@@ -85,6 +95,11 @@ export function applyEdits(manual, edits, { revert = true, retiree, sources } = 
     if (stepStatements.has(statement.id) && !isActionText(text)) {
       // 直した文は使わず、元の文のまま残す。どの文を使わなかったかを見せるため、直した文も残す
       changes.push({ statement: statement.id, missing: ['手順の形'], rejected: text });
+      return statement;
+    }
+    if (directionChanged(statement.text, text)) {
+      // 向きのある部品の元と先は、この文だけが言う。読み取れなくなる直しは使わず、元の文のまま残す
+      changes.push({ statement: statement.id, missing: ['向きの文'], rejected: text });
       return statement;
     }
     const missing = [...new Set([...missingTokens(statement.text, text, names), ...droppedDevices(statement.text, text, devices)])];
