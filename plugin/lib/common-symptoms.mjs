@@ -4,6 +4,7 @@
 
 import { readFileSync } from 'node:fs';
 import { appendExtraEntry, hasCredential } from './transcript.mjs';
+import { NOT_TROUBLE, TROUBLE_SIGN } from './trouble-sign.mjs';
 
 const LIST_PATH = new URL('../checklist/common-symptoms.json', import.meta.url);
 
@@ -52,9 +53,14 @@ export function parseSelection(answer, symptoms = approvedSymptoms()) {
 /** 追加の質問。決まった形にして、プログラムが作る。 */
 export const followupQuestion = (symptom) => `社員から「${symptom.label}」と相談されたとき、どうしましたか。誰に連絡したか、何を確かめたかも教えてください。`;
 
-/** 本体の聞き取りの答えに、その症状の語があるか。あれば追加では聞かない。 */
+/**
+ * 本体の聞き取りの答えに、その症状の困りごとの文があるか。あれば追加では聞かない。
+ * 症状の語があるだけの文（「スキャンすると NAS に入ります」など）は数えない。困りごとや対応先の言い方がある文だけを数える。
+ */
 export function coveredBy(symptom, transcript) {
-  const entry = transcript.entries.find((candidate) => candidate.gap !== COMMON_GAP && candidate.status === 'answered' && symptom.words.some((word) => compact(candidate.answer).includes(compact(word))));
+  const words = symptom.words.map(compact);
+  const about = (answer) => answer.split('。').some((sentence) => words.some((word) => compact(sentence).includes(word)) && TROUBLE_SIGN.test(sentence) && !NOT_TROUBLE.test(sentence));
+  const entry = transcript.entries.find((candidate) => candidate.gap !== COMMON_GAP && candidate.status === 'answered' && about(candidate.answer));
   return entry?.id ?? null;
 }
 

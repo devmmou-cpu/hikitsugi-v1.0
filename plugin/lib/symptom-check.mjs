@@ -4,13 +4,10 @@
 
 import { hasCredential } from './transcript.mjs';
 import { approvedSymptoms, COMMON_GAP } from './common-symptoms.mjs';
+import { NOT_TROUBLE, TROUBLE_SIGN } from './trouble-sign.mjs';
 
 // 困りごと（症状、故障、対応先）を聞く項目
 const TROUBLE_ITEMS = new Set(['CHK-02', 'CHK-04', 'CHK-09', 'CHK-14', 'CHK-15', 'CHK-18', 'CHK-22', 'CHK-27', 'CHK-32', 'CHK-33', 'CHK-37', 'CHK-38']);
-// 困りごとか対応先の文の言い方
-const TROUBLE_SIGN = /(?:ときは|ときも|たら[、,]|なければ|ことがあり|故障|壊れ|止ま|つながら|見えな|届か|開け|開か|動か|切れ|失敗|満杯|エラー|(?:に|へ|で)(?:頼み|任せ|連絡し|電話し|相談し|依頼し))/;
-// 入退社と定期作業の文。困りごとではない
-const NOT_TROUBLE = /入社|退職|毎週|毎月|毎年|更新し|定期/;
 // どの困りごとでも使う語。これだけ一致しても、同じ話とは言えない
 const COMMON_WORDS = new Set(['連絡', '連絡先', '電話', '相談', '依頼', '窓口', '対応', '故障', '障害', '担当', '担当者', '受付', '自分', '本社', '社員', '調子', '時間', '半日', '昨年', '去年']);
 
@@ -55,9 +52,10 @@ export function symptomGaps(manual, transcript, retiree = '', common = null, sym
     sources: answered.filter((entry) => entry.gap !== COMMON_GAP && compact(entry.answer).includes(key)).map((entry) => entry.id),
     detail,
   }));
-  // 定番の症状で、相談されたことがあると選ばれ、追加の質問に答えがあったもの。題名に症状の語があるページがなければ挙げる
+  // 定番の症状で、相談されたことがあると選ばれ、追加の質問か 20 問の聞き取りに答えがあったもの。題名に症状の語があるページがなければ挙げる。
+  // 選んだのに、ページも外す理由もないまま消える症状を作らないため
   const byId = new Map(answered.map((entry) => [entry.id, entry]));
-  for (const { id, evidence } of common?.asked ?? []) {
+  for (const { id, evidence } of [...(common?.asked ?? []), ...(common?.covered ?? [])]) {
     const entry = byId.get(evidence);
     const symptom = symptoms.find((candidate) => candidate.id === id);
     if (!entry || !symptom) continue;

@@ -27,7 +27,10 @@ export function measure(dir, symptoms = approvedSymptoms()) {
   const manual = readJson(join(dir, 'manual-final.json'));
   const transcript = readJson(join(dir, 'transcript.json'));
   // 定番の症状の段のある通しでは、記録は common-symptoms.json の側にある
-  const full = existsSync(join(dir, 'common-symptoms.json')) ? readJson(join(dir, 'common-symptoms.json')).transcript : transcript;
+  const stage = existsSync(join(dir, 'common-symptoms.json')) ? readJson(join(dir, 'common-symptoms.json')) : null;
+  const full = stage?.transcript ?? transcript;
+  // 追加の質問の記録が、どの症状のものか
+  const followupOf = new Map((stage?.common?.asked ?? []).map(({ id, evidence }) => [evidence, id]));
   const facts = loadCommonFacts(join(ROOT, 'eval/sets', company));
   const text = new Map(manual.statements.map((statement) => [statement.id, statement]));
   const commonEntries = new Set(full.entries.filter((entry) => entry.gap === COMMON_GAP).map((entry) => entry.id));
@@ -35,7 +38,10 @@ export function measure(dir, symptoms = approvedSymptoms()) {
   const pages = manual.symptom_pages.map((page) => {
     const ids = pageStatementIds(page);
     const evidence = new Set(ids.flatMap((id) => text.get(id)?.evidence ?? []));
-    return { id: page.id, title: compact(text.get(page.title)?.text), fromCommon: [...evidence].some((ref) => commonEntries.has(ref)) };
+    const title = compact(text.get(page.title)?.text);
+    // このページが根拠にした追加の質問の症状のうち、題名にその語があるもの。あれば、その症状のページとして正しくできたもの
+    const served = [...evidence].map((ref) => followupOf.get(ref)).filter(Boolean).filter((id) => symptoms.find((symptom) => symptom.id === id)?.words.some((word) => title.includes(compact(word))));
+    return { id: page.id, title, fromCommon: [...evidence].some((ref) => commonEntries.has(ref)), served };
   });
   const status = (symptom) => {
     const fact = facts?.facts.find((candidate) => candidate.symptom === symptom.id);
@@ -43,10 +49,12 @@ export function measure(dir, symptoms = approvedSymptoms()) {
   };
   const rows = symptoms.map((symptom) => {
     const matching = pages.filter((page) => symptom.words.some((word) => page.title.includes(compact(word))));
-    return { id: symptom.id, label: symptom.label, supplement: status(symptom), pages: matching.map((page) => page.id), from_common: matching.filter((page) => page.fromCommon).map((page) => page.id) };
+    // 題名の語がたまたま重なっただけのページ（別の症状の追加の質問からできたページ）は、この症状からできたページに数えない
+    const fromCommon = matching.filter((page) => page.fromCommon && !(page.served.length && !page.served.includes(symptom.id)));
+    return { id: symptom.id, label: symptom.label, supplement: status(symptom), pages: matching.map((page) => page.id), from_common: fromCommon.map((page) => page.id) };
   });
   // 「ない」と「事実なし」の症状に、定番の症状の段からできたページ。「ない」の症状はページそのものがあれば数える（どれも前はページのなかった症状）
-  const violations = rows.filter((row) => row.supplement !== 'ある' && (row.from_common.length || (row.supplement === 'ない' && row.pages.length)));
+  const violations = rows.filter((row) => row.supplement !== 'ある' && (row.from_common.length || (row.supplement === 'ない' && row.pages.some((id) => !pages.find((page) => page.id === id).served.length))));
   const selectionCited = manual.statements.filter((statement) => selection && statement.evidence.includes(selection)).map((statement) => statement.id);
   const main = transcript.entries.filter((entry) => entry.gap !== COMMON_GAP && entry.gap !== 'GAP-000').length;
   const extra = commonEntries.size;

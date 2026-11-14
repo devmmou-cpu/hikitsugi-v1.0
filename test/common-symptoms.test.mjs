@@ -52,8 +52,10 @@ test('選ぶ段の答え：番号だけを拾い、「なし」は選ばなか�
 });
 
 test('追加の質問：本体の 20 問で答えがあった症状は聞かず、残りを一覧の順に 3 問まで聞く。超えた分は聞けなかった症状にする', () => {
-  const transcript = { entries: [{ id: 'INT-001', gap: 'GAP-001', status: 'answered', answer: '全社でネットがつながらないときはクロテン通信に電話します。' }] };
+  const transcript = { entries: [{ id: 'INT-001', gap: 'GAP-001', status: 'answered', answer: '全社でネットがつながらないときはクロテン通信に電話します。複合機でスキャンすると、データが NAS のスキャン用フォルダに入ります。' }] };
   assert.equal(coveredBy(approvedSymptoms()[3], transcript), 'INT-001');
+  // 症状の語があるだけで、困りごとの言い方のない文は、答えがあったとは数えない（1 回目の通しで、選んだ症状が消えた）
+  assert.equal(coveredBy(approvedSymptoms()[14], transcript), null);
   const plan = planFollowups(['CS-01', 'CS-02', 'CS-04', 'CS-11', 'CS-13'], transcript);
   assert.deepEqual(plan, { ask: ['CS-01', 'CS-02', 'CS-11'], covered: [{ id: 'CS-04', evidence: 'INT-001' }], over: ['CS-13'] });
 });
@@ -150,6 +152,9 @@ test('Writer：選んで追加の質問に答えた症状は、題名にその�
   // サンプルには「スキャンした書類が届かない」のページがあるので、印刷だけが挙がる
   assert.deepEqual(gaps, [{ id: 'SYM-1', sources: ['INT-031'], detail: '定番の症状「印刷できない」：印刷できないときは、PC を再起動してもらいます。' }]);
   assert.deepEqual(symptomGaps(manual, transcript, '田中'), [], '定番の症状の記録は、ふつうの困りごとの照合にはかけない');
+  // 20 問の聞き取りに答えがあったとして追加で聞かなかった症状も、ページがなければ挙げる（選んだ症状を黙って消さない）
+  const main = { entries: [{ id: 'INT-005', gap: 'GAP-001', covers: ['CHK-10'], status: 'answered', answer: '印刷できないときはイタチ事務機に電話します。', question: 'q' }] };
+  assert.deepEqual(symptomGaps(manual, main, '田中', { selection: 'INT-030', asked: [], covered: [{ id: 'CS-01', evidence: 'INT-005' }] }).map((gap) => gap.sources), [['INT-005']]);
   assert.match(selectionEvidenceProblems([{ id: 'STM-900', evidence: ['INT-030'] }], common).join(), /定番の症状を選んだ答えです/);
   assert.deepEqual(selectionEvidenceProblems([{ id: 'STM-900', evidence: ['INT-031'] }], common), []);
 });
