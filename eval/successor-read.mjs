@@ -5,6 +5,7 @@
 //
 // 使い方：node --env-file=.env eval/successor-read.mjs <通しの結果のフォルダ>...
 //         結果は各フォルダの successor-read.json に残す。すでにあれば呼び直さない
+//         --out <名前> で保存先の名前を変えられる（同じ説明書を読み直して、読むたびの揺れを見るため）
 // 調整用の会社の結果だけを読む（holdout のフォルダは受け付けない）
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -80,11 +81,14 @@ export async function readThrough({ dir, client, record = () => {} }) {
 }
 
 async function main() {
-  const dirs = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const at = args.indexOf('--out');
+  const outName = at >= 0 ? args.splice(at, 2)[1] : 'successor-read.json';
+  const dirs = args;
   if (!dirs.length) throw new Error('使い方：node --env-file=.env eval/successor-read.mjs <通しの結果のフォルダ>...');
   for (const dir of dirs) if (!TUNING.test(basename(dir))) throw new Error(`調整用の会社の通しの結果だけを読みます：${dir}`);
   for (const dir of dirs) {
-    const out = join(dir, 'successor-read.json');
+    const out = join(dir, outName);
     if (existsSync(out)) {
       console.log(`${basename(dir)}：保存済み`);
       continue;

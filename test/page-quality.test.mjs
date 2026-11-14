@@ -52,6 +52,16 @@ test('物に触る手順のページを見つけ、足りない項目を出す�
   assert.deepEqual(pageChecks(manual.symptom_pages[2], manual).missing, ['mark', 'confirm']);
 });
 
+test('「差し込み口」「つないである」は、電源を入れ直す手順と数えない（待つ時間を求めない）', () => {
+  const manual = withPhysicalPages([
+    { id: 'T3', title: '不審なメール', steps: [['STM-821', 'PC の裏の四角い差し込み口にある LAN ケーブルを、爪を押しながら引いて抜いてください。']] },
+    { id: 'T4', title: '感染', steps: [['STM-831', '疑われる PC につないである LAN ケーブルを抜いてください。']] },
+  ]);
+  assert.deepEqual(pageChecks(manual.symptom_pages[1], manual).needs, ['mark', 'confirm']);
+  assert.deepEqual(pageChecks(manual.symptom_pages[2], manual).needs, ['mark', 'confirm']);
+  assert.deepEqual(pageChecks(withPhysicalPages([AP_PAGE]).symptom_pages[1], withPhysicalPages([AP_PAGE])).needs, ['mark', 'wait', 'confirm']);
+});
+
 test('そろっているページ、「記録がありません」と書いたページは、聞かない', () => {
   const complete = { ...AP_PAGE, goal: ['STM-819', '工場の PC の Wi-Fi の一覧に工場の名前が出れば、直っています。'] };
   const saidNone = { ...CABLE_A, notes: [['STM-829', 'LAN ケーブルの置き場所と目印は、記録がありません。直ったかの確かめ方も、記録がありません。']] };
