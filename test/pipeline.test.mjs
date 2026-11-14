@@ -438,8 +438,13 @@ test('/hikitsugi:start：段階をたどって取扱説明書まで進み、途�
     assert.equal(written.company, input.survey.company);
     assert.equal(written.as_of, input.survey.as_of);
     assert.equal(nextStep(work).step, 'editor');
-    write('editor-1.json', { rewrites: [], glossary: glossaryEdits() });
-    hikitsugi('merge-edits', ['1']);
+    // 手順の文を禁止の文に直したら使わず、使わなかった文を見せる
+    const beforeEdit = JSON.parse(readFileSync(join(work, 'manual-1.json'), 'utf8'));
+    const firstStep = beforeEdit.symptom_pages[0].steps.find((id) => !beforeEdit.statements.find((statement) => statement.id === id).library);
+    assert.ok(firstStep, '部品でない手順の文がある');
+    write('editor-1.json', { rewrites: [{ id: firstStep, text: '電源は切らないでください。' }], glossary: glossaryEdits() });
+    const merged = hikitsugi('merge-edits', ['1']);
+    assert.match(merged, new RegExp(`手順の形でなくなったので、元の文のまま残しました：${firstStep}（直した文「電源は切らないでください。」は使っていません）`));
     assert.equal(nextStep(work).step, 'verifier');
 
     assert.throws(() => hikitsugi('render'), /合格していない/);
@@ -719,9 +724,10 @@ test('ゴール、分岐、例外を手順と別の項目に置ける。手順�
     step('STM-004', 'LIB-001'),
   ];
   const found = problemsOf(withSteps(statements, ['STM-001', 'STM-002', 'STM-003', 'STM-005', 'STM-004']));
-  assert.match(found, /STM-001 は1つの操作ではありません/);
-  assert.match(found, /STM-002 は1つの操作ではありません/);
-  assert.match(found, /STM-005 は1つの操作ではありません/);
+  assert.match(found, /STM-001「NAS は事務所にあります。」は1つの操作ではありません/);
+  // 禁止の文と判定したときは、文と判定の理由を見せる
+  assert.match(found, /STM-002「ルーターは初期化しないでください。」は1つの操作ではありません。「〜ないでください」で終わるので、禁止の文と判定しました/);
+  assert.match(found, /STM-005「画面が消えます。そのあと電源を入れてください。」は1つの操作ではありません。手順は/);
   assert.doesNotMatch(found, /STM-003/);
   assert.doesNotMatch(found, /STM-004/);
   const moved = withSteps(statements.filter((s) => s.id !== 'STM-005'), ['STM-003', 'STM-004'], { notes: ['STM-001', 'STM-002'] });
@@ -1166,7 +1172,8 @@ test('Editor は手順を2文に分けられない', () => {
   const before = manual.statements.find((s) => s.id === id).text;
   const { manual: edited, changes } = applyEdits(manual, { rewrites: [{ id, text: '事務所に PC があります。その PC の電源を確かめてください。' }], glossary: [] });
   assert.equal(edited.statements.find((s) => s.id === id).text, before);
-  assert.deepEqual(changes, [{ statement: id, missing: ['手順の形'] }]);
+  // 使わなかった直しの文も残す（黙って外さない）
+  assert.deepEqual(changes, [{ statement: id, missing: ['手順の形'], rejected: '事務所に PC があります。その PC の電源を確かめてください。' }]);
 });
 
 test('部品の順番が決まった順と逆なら見つける', () => {

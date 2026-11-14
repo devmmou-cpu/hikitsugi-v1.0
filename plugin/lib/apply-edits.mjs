@@ -83,7 +83,8 @@ export function applyEdits(manual, edits, { revert = true, retiree, sources } = 
       return statement;
     }
     if (stepStatements.has(statement.id) && !isActionText(text)) {
-      changes.push({ statement: statement.id, missing: ['手順の形'] });
+      // 直した文は使わず、元の文のまま残す。どの文を使わなかったかを見せるため、直した文も残す
+      changes.push({ statement: statement.id, missing: ['手順の形'], rejected: text });
       return statement;
     }
     const missing = [...new Set([...missingTokens(statement.text, text, names), ...droppedDevices(statement.text, text, devices)])];

@@ -574,6 +574,8 @@ function mergeEdits(work, [round]) {
   };
   writeJson(join(work, `plain-findings-${round}.json`), remaining);
   const notes = [`やさしく直しました。事実が変わったので元に戻した文章：${changes.length} 件`];
+  // 手順の形が崩れた直し（禁止の文になった、2 文になったなど）は、使わなかった文を見せる。黙って外さない
+  for (const change of changes.filter((entry) => entry.rejected !== undefined)) notes.push(`手順の形でなくなったので、元の文のまま残しました：${change.statement}（直した文「${change.rejected}」は使っていません）`);
   if (problems.long_sentences.length || problems.unexplained_terms.length) {
     notes.push(`残った問題：長い文 ${problems.long_sentences.length} 件、説明のない語 ${problems.unexplained_terms.length} 件（plain-findings-${round}.json）`);
   }

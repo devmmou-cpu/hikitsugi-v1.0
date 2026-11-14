@@ -30,22 +30,36 @@ export const pageStatementIds = (page) => [
 
 const sentencesOf = (text) => text.split('。').map((sentence) => sentence.trim()).filter(Boolean);
 
-// 禁止の文（〜しないでください）。「つないでください」は「つなぐ」の操作で、禁止ではない（否定は「つながないでください」）
-const PROHIBITION = /(?<!つ)ないでください$/;
+/**
+ * 「〜ないでください」で終わっても禁止ではない動詞の、て形の一覧。「つなぐ」→「つないで」のように、て形が「ないで」で終わる動詞。
+ * 否定は「つながないでください」になる。新しく見つけたら、ここに足してテスト（test/scorers.test.mjs）にも足す。
+ * 11/14 に、調整用 3 社の保存済みの出力 41 回分、サンプル、手順部品の「ないでください」の文 98 種類を読んで、
+ * 操作だったのは「つないでください」の 2 種類だけだった（ほかの 96 種類は禁止の文）
+ */
+export const NOT_NEGATIVE_NAIDE = Object.freeze(['つないで']);
+
+/** 禁止の文か（〜しないでください）。一覧の動詞は操作として扱う。 */
+export function isProhibition(sentence) {
+  const text = sentence.trim().replace(/。$/, '');
+  return /ないでください$/.test(text) && !NOT_NEGATIVE_NAIDE.some((verb) => text.endsWith(`${verb}ください`));
+}
 
 /** 操作の文か。1文で、「〜してください」で終わるものだけを認める。禁止は説明に置く。 */
 export function isActionText(text) {
   const sentences = sentencesOf(text);
-  return sentences.length === 1 && /ください$/.test(sentences[0]) && !PROHIBITION.test(sentences[0]);
+  return sentences.length === 1 && /ください$/.test(sentences[0]) && !isProhibition(sentences[0]);
 }
 
-/** 操作の欄に置かれた、1つの操作ではない文章の一覧。部品の文面は確認済みなので対象にしない。 */
+/**
+ * 操作の欄に置かれた、1つの操作ではない文章の一覧。部品の文面は確認済みなので対象にしない。
+ * 文の中身と、禁止の文と判定したかも返す。手順から外すときに、どの文を外したかを必ず見せるため。
+ */
 export function nonActionSteps(manual) {
   const byId = new Map(manual.statements.map((statement) => [statement.id, statement]));
   return manual.symptom_pages.flatMap((page) =>
     [...page.first_steps, ...page.steps]
       .filter((id) => byId.has(id) && !byId.get(id).library && !isActionText(byId.get(id).text))
-      .map((id) => ({ page: page.id, statement: id })),
+      .map((id) => ({ page: page.id, statement: id, text: byId.get(id).text, prohibition: sentencesOf(byId.get(id).text).length === 1 && isProhibition(byId.get(id).text) })),
   );
 }
 
@@ -90,7 +104,7 @@ export function pageProblems(manual) {
   const byId = new Map(manual.statements.map((statement) => [statement.id, statement]));
   const contacts = new Set(manual.contacts.map((contact) => contact.id));
   const problems = nonActionSteps(manual).map(
-    ({ page, statement }) => `${page}: ${statement} は1つの操作ではありません。手順は「〜してください」で終わる1文にしてください。確認は goal、条件は branches、例外は exceptions、事実や注意は notes に置いてください`,
+    ({ page, statement, text, prohibition }) => `${page}: ${statement}「${text}」は1つの操作ではありません。${prohibition ? '「〜ないでください」で終わるので、禁止の文と判定しました。禁止は notes に置いてください。' : ''}手順は「〜してください」で終わる1文にしてください。確認は goal、条件は branches、例外は exceptions、事実や注意は notes に置いてください`,
   );
   for (const page of manual.symptom_pages) {
     const missing = pageStatementIds(page).filter((id) => !byId.has(id));

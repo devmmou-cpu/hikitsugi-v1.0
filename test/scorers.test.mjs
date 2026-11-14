@@ -11,7 +11,7 @@ import * as gaps from '../eval/lib/scorers/gaps.mjs';
 import * as interview from '../eval/lib/scorers/interview.mjs';
 import * as manual from '../eval/lib/scorers/manual.mjs';
 import * as troubles from '../eval/lib/scorers/troubles.mjs';
-import { isActionText, nonActionSteps } from '../plugin/lib/page-check.mjs';
+import { isActionText, isProhibition, nonActionSteps, NOT_NEGATIVE_NAIDE } from '../plugin/lib/page-check.mjs';
 
 const SET = join(dirname(fileURLToPath(import.meta.url)), '../eval/sets/okojo');
 const input = loadInput(SET);
@@ -302,13 +302,31 @@ test('取扱説明書の採点：手順に置いた、やることではない�
     { id: 'STM-003', text: '部品の文面です。', evidence: ['LIB-001'], library: 'LIB-001' },
   ];
   const page = { id: 'T1', first_steps: [], steps: ['STM-001', 'STM-002', 'STM-003'] };
-  assert.deepEqual(nonActionSteps({ statements, symptom_pages: [page] }), [{ page: 'T1', statement: 'STM-001' }]);
+  // 文の中身も返す（手順から外すときに、どの文かを見せるため）
+  assert.deepEqual(nonActionSteps({ statements, symptom_pages: [page] }), [{ page: 'T1', statement: 'STM-001', text: 'NAS に保守契約はありません。', prohibition: false }]);
   assert.equal(isActionText('総務課に知らせてください。'), true);
   assert.equal(isActionText('勝手に再起動しないでください。'), false);
   // 「つなぐ」の操作は禁止の文ではない（段 2 の通しで、手順として受け付けられずに止まった）
   assert.equal(isActionText('電源アダプターをつないでください。'), true);
   assert.equal(isActionText('LAN ケーブルを、ルーターにつないでください。'), true);
   assert.equal(isActionText('ケーブルをつながないでください。'), false);
+});
+
+test('禁止の文の判定：否定でない動詞は一覧（NOT_NEGATIVE_NAIDE）にあるものだけ。保存済みの出力にあった禁止の形は、すべて禁止と判定する', () => {
+  // 一覧の動詞は、どれも操作として読む。一覧を変えたら、ここに例を足す
+  assert.deepEqual([...NOT_NEGATIVE_NAIDE], ['つないで']);
+  for (const verb of NOT_NEGATIVE_NAIDE) assert.equal(isProhibition(`ケーブルを${verb}ください。`), false, verb);
+  // 11/14 に調整用 3 社の保存済みの出力、サンプル、手順部品から抜き出した禁止の文の語尾の形（96 種類の文から、形ごとに 1 つ）
+  const prohibitions = [
+    '勝手に再起動しないでください。', 'ファイルは消さないでください。', '管理画面で初期化しないでください。', 'リセットボタンは押さないでください。',
+    '電源は切らないでください。', '自分でやらないでください。', '怪しいメールは開かないでください。', '古い世代を戻さないでください。',
+    '配線には触らないでください。', '大型更新を進めないでください。', '初期状態にしないでください。', '手順を試さないでください。',
+    'ケーブルをつながないでください。', '勝手に交換しないでください。', 'ファイルを削除しないでください。',
+  ];
+  for (const sentence of prohibitions) assert.equal(isProhibition(sentence), true, sentence);
+  // 2 文の文章は、禁止かどうかの前に 1 つの操作ではない
+  const page = { statements: [{ id: 'STM-001', text: '電源は切らないでください。' }], symptom_pages: [{ id: 'T1', first_steps: [], steps: ['STM-001'] }] };
+  assert.deepEqual(nonActionSteps(page), [{ page: 'T1', statement: 'STM-001', text: '電源は切らないでください。', prohibition: true }]);
   assert.equal(isActionText('NAS は事務所にあります。'), false);
   assert.equal(isActionText('画面が消えます。そのあと電源を入れてください。'), false);
 });
