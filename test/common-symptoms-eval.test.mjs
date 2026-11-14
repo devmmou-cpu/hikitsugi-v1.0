@@ -59,6 +59,15 @@ test('評価の測定：「ない」の症状のページと、選ぶ段を根�
     writeFileSync(join(dir, 'manual-final.json'), JSON.stringify(broken));
     const found = measure(dir);
     assert.deepEqual(found.violations.map((row) => row.id), ['CS-13']);
+    // 20 問の聞き取りからできるページが、追加の質問の答えを根拠に足しただけなら数えない（2 回目の通しのクズリ運輸）
+    const followup = { id: 'INT-099', gap: 'GAP-900', covers: ['CHK-37'], question: '追加', answer: 'a', status: 'answered', answered_at: 't' };
+    writeFileSync(join(dir, 'common-symptoms.json'), JSON.stringify({ transcript: { entries: [...entries, followup] }, common: { asked: [{ id: 'CS-01', evidence: 'INT-099' }] } }));
+    const sharedTitle = { ...manual, statements: manual.statements.map((statement) => (statement.id === title.id ? { ...statement, text: 'パスワードを忘れた人がいる', evidence: ['INT-001', 'INT-099'] } : statement)) };
+    writeFileSync(join(dir, 'manual-final.json'), JSON.stringify(sharedTitle));
+    assert.deepEqual(measure(dir).violations, []);
+    const onlyFollowup = { ...sharedTitle, statements: sharedTitle.statements.map((statement) => ({ ...statement, evidence: statement.evidence.map((ref) => (ref.startsWith('INT-') ? 'INT-099' : ref)) })) };
+    writeFileSync(join(dir, 'manual-final.json'), JSON.stringify(onlyFollowup));
+    assert.ok(measure(dir).violations.some((row) => row.id === 'CS-08'), '追加の質問の答えだけでできた、事実なしの症状のページは数える');
     assert.deepEqual(found.selection_cited, [title.id]);
   } finally {
     rmSync(root, { recursive: true, force: true });

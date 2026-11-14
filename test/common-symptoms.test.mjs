@@ -163,7 +163,10 @@ test('表示：相談を受けたことがない症状は、PC 用とスマホ�
   const manual = withReplies(readJson(join(ROOT, 'test/fixtures/manual-full.json')));
   const items = approvedSymptoms().map(({ id }) => ({ id, outcome: id === 'CS-01' ? 'consulted' : id === 'CS-13' ? 'not_asked' : 'not_consulted', evidence: 'INT-030' }));
   const withCommon = { ...manual, common_symptoms: { selection: 'INT-030', unknown: false, items } };
-  assert.equal(notConsultedLabels(withCommon).length, 13);
+  // サンプルにページのある症状（ネット、Wi-Fi、共有フォルダなど）は、選ばれていなくても「ページがない症状」に並べない
+  const listed = notConsultedLabels(withCommon);
+  assert.ok(listed.includes('画面が映らない（モニター）') && listed.includes('PC が遅い・固まる'));
+  for (const label of ['全社でネットがつながらない', '共有フォルダが見えない・開けない', 'スキャンした書類が届かない']) assert.ok(!listed.includes(label), `${label} はページがある`);
   const html = renderManual(withCommon);
   const help = html.slice(html.indexOf('<section id="tab-help"'), html.indexOf('</section>', html.indexOf('id="help-no-page"')));
   assert.ok(help.includes(NO_PAGE_HEADING));

@@ -135,8 +135,17 @@ const labelsOf = (ids, list) => {
   return ids.map((id) => byId.get(id)).filter(Boolean);
 };
 
-/** 相談を受けたことがないと答えた症状の題名。99 のページに並べる。 */
-export const notConsultedLabels = (manual, list = loadCommonList()) => labelsOf((manual.common_symptoms?.items ?? []).filter((item) => item.outcome === 'not_consulted').map((item) => item.id), list);
+/**
+ * 相談を受けたことがないと答えた症状の題名。99 のページに並べる。
+ * 題名にその症状の語がある手順ページがあれば並べない。20 問の聞き取りからページができている症状を「ページがない」と出さないため。
+ */
+export function notConsultedLabels(manual, list = loadCommonList()) {
+  const text = new Map(manual.statements.map((statement) => [statement.id, statement.text]));
+  const titles = manual.symptom_pages.map((page) => compact(text.get(page.title)));
+  const words = new Map(list.symptoms.map((symptom) => [symptom.id, symptom.words.map(compact)]));
+  const hasPage = (id) => (words.get(id) ?? []).some((word) => titles.some((title) => title.includes(word)));
+  return labelsOf((manual.common_symptoms?.items ?? []).filter((item) => item.outcome === 'not_consulted' && !hasPage(item.id)).map((item) => item.id), list);
+}
 
 /** 「まだ分かっていないこと」に足す 1 行。選んだが上限で聞けなかった症状。選ぶ段の「分からない」は、記録から自動で出る。 */
 export function commonUnknownLines(manual, list = loadCommonList()) {

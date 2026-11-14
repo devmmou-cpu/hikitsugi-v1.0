@@ -41,7 +41,9 @@ export function measure(dir, symptoms = approvedSymptoms()) {
     const title = compact(text.get(page.title)?.text);
     // このページが根拠にした追加の質問の症状のうち、題名にその語があるもの。あれば、その症状のページとして正しくできたもの
     const served = [...evidence].map((ref) => followupOf.get(ref)).filter(Boolean).filter((id) => symptoms.find((symptom) => symptom.id === id)?.words.some((word) => title.includes(compact(word))));
-    return { id: page.id, title, fromCommon: [...evidence].some((ref) => commonEntries.has(ref)), served };
+    // 20 問の聞き取りの答えを根拠にしていれば、もとからできるページ。追加の質問の答えを根拠に足しただけのものは、新しくできたページに数えない
+    const fromInterview = [...evidence].some((ref) => ref.startsWith('INT-') && !commonEntries.has(ref));
+    return { id: page.id, title, fromCommon: [...evidence].some((ref) => commonEntries.has(ref)) && !fromInterview, served };
   });
   const status = (symptom) => {
     const fact = facts?.facts.find((candidate) => candidate.symptom === symptom.id);
