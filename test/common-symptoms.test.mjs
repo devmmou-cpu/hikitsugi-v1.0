@@ -2,6 +2,7 @@
 // 設計は docs/design/stage2-common-symptoms.md。偽の答えで流れを確かめる（API は使わない）。
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,7 +17,7 @@ import { QUESTION_LIMIT } from '../plugin/lib/transcript.mjs';
 import { validate } from '../plugin/lib/validate.mjs';
 import { writePhoneBundle } from '../plugin/renderer/phone.mjs';
 import { NO_PAGE_HEADING, renderManual } from '../plugin/renderer/render.mjs';
-import { nextStep, run } from '../plugin/scripts/hikitsugi.mjs';
+import { COMMANDS, nextStep, run, STDIN_COMMANDS } from '../plugin/scripts/hikitsugi.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SET = join(ROOT, 'eval/sets/okojo');
@@ -86,6 +87,20 @@ function interviewed(fn) {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+test('CLI を起動して、選ぶ段と追加の質問の答えを標準入力で渡せる（11/15、実物の流れで答えが空になって止まっていた）', () =>
+  interviewed(({ work }) => {
+    const cli = (args, input) => execFileSync(process.execPath, [fileURLToPath(new URL('../plugin/scripts/hikitsugi.mjs', import.meta.url)), ...args], { input, encoding: 'utf8', env: { ...process.env, HIKITSUGI_WORK: work } });
+    cli(['common-list'], '');
+    assert.match(cli(['common-select'], '1'), /相談されたことがある症状：印刷できない/);
+    cli(['common-next'], '');
+    assert.match(cli(['common-record', 'answered'], '印刷できないときは、イタチ事務機に電話します。'), /定番の症状の聞き取りを終えました/);
+  }));
+
+test('標準入力を読むコマンドの一覧は、回答を受け取るコマンド（関数の引数が 3 つ）と同じ', () => {
+  const takes = Object.entries(COMMANDS).filter(([, handler]) => handler.length >= 3).map(([name]) => name).sort();
+  assert.deepEqual([...STDIN_COMMANDS].sort(), takes);
+});
 
 test('流れ：20 問のあとに一覧を出し、選ばれた症状だけ追加で聞いて、Writer に進む。選ぶ段と追加の質問は 20 問に数えない', () =>
   interviewed(({ work, hikitsugi, read }) => {

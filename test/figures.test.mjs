@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { arrowOf, arrowSidesInText, figureCandidate, figureProblems, holdLabel, keyFigure, loadKit, partsFigure, readKeys, stepFigures } from '../plugin/lib/figure-build.mjs';
+import { figureLines, pageFigureDetails } from '../plugin/lib/figures.mjs';
+import { arrowOf, arrowSidesInText, figureCandidate, inheritedDevice, figureProblems, holdLabel, keyFigure, loadKit, partsFigure, readKeys, stepFigures } from '../plugin/lib/figure-build.mjs';
 
 const kit = loadKit();
 const read = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -126,19 +127,65 @@ test('手順に付ける絵：キーの絵は文から作り、部品の絵は�
       { id: 'STM-002', text: 'PC の LAN ケーブルを抜いてください。', library: null },
       { id: 'STM-003', text: 'NAS の電源ボタンを押してください。', library: null },
       { id: 'STM-004', text: 'ルーターの電源プラグを差してください。', library: null },
-      { id: 'STM-005', text: '電源アダプターを差してください。', library: null },
+      { id: 'STM-005', text: 'LAN ケーブルを差してください。', library: null },
     ],
     figures: [
       { step: 'STM-002', text: 'PC の LAN ケーブルを抜いてください。', items: [{ part: 'pc', label: 'PC' }, { part: 'cable', label: '' }] },
       { step: 'STM-003', text: 'NAS の電源ボタンを押してください。', items: [{ part: 'box', label: 'NAS' }, { part: 'power-button', label: '' }] },
       { step: 'STM-004', text: 'ルーターの電源を差してください。', items: [{ part: 'router', label: '' }, { part: 'power', label: '' }] },
-      // 決まりの前に記録した、片方だけの矢印の絵。描くときにも付けない
-      { step: 'STM-005', text: '電源アダプターを差してください。', items: [{ part: 'power', label: '' }] },
+      // 決まりの前に記録した、片方だけの矢印の絵。そのままでは描かない（機器は引き継ぎの決まりで決める）
+      { step: 'STM-005', text: 'LAN ケーブルを差してください。', items: [{ part: 'cable', label: '' }] },
     ],
     figure_off: ['STM-003'],
   };
   const found = stepFigures(['STM-001', 'STM-002', 'STM-003', 'STM-004', 'STM-005'], manual);
-  assert.deepEqual([...found.keys()], ['STM-001', 'STM-002']);
+  // STM-005 は、前の STM-002 で LAN ケーブルと一緒に出た機器（PC）を引き継ぐ
+  assert.deepEqual([...found.keys()], ['STM-001', 'STM-002', 'STM-005']);
   assert.match(found.get('STM-001'), />Ctrl</);
+  assert.match(found.get('STM-005'), />PC</);
+  assert.ok(found.get('STM-005').includes(kit.arrows.left));
   assert.equal(stepFigures(['STM-001'], manual, { skip: new Set(['STM-001']) }).size, 0);
+});
+
+test('機器の引き継ぎ：矢印の文に機器がなければ、同じ並びの前の手順で同じ物と一緒に出た機器が 1 つだけのとき、その機器を出す（11/15）', () => {
+  const before = (...texts) => texts.map((text, index) => ({ id: `STM-0${index + 10}`, text }));
+  // 1 つに決まる
+  const one = inheritedDevice(before('工場の入口に近い柱の上にある AP の、電源アダプターを抜いてください。', 'そのまま10秒待ってください。'), '電源アダプターを差してください。');
+  assert.deepEqual(one, { items: [{ part: 'router', label: 'AP' }, { part: 'power', label: '電源アダプター' }], from: 'STM-010' });
+  // 同じ物と一緒に出た機器が 2 つ（NAS と UTM）：付けない
+  assert.equal(inheritedDevice(before('NAS の電源プラグを抜いてください。', 'UTM の電源プラグを抜いてください。'), '電源プラグを差してください。'), null);
+  // 1 つの文に機器が 2 つ：付けない
+  assert.equal(inheritedDevice(before('PC とルーターをつなぐ LAN ケーブルを抜いてください。'), 'LAN ケーブルを差し直してください。'), null);
+  // 前の手順にない：付けない
+  assert.equal(inheritedDevice([], '電源アダプターを差してください。'), null);
+  // 前の手順の機器が、別の物と一緒に出ただけ：付けない
+  assert.equal(inheritedDevice(before('ルーターの LAN ケーブルを抜いてください。'), '電源アダプターを差してください。'), null);
+  // 機器が文にあるとき、動かす物が 2 つのとき、矢印の動詞がないときは、引き継ぎの対象外
+  assert.equal(inheritedDevice(before('AP の電源アダプターを抜いてください。'), 'AP の電源アダプターを差してください。'), null);
+  assert.equal(inheritedDevice(before('AP の電源アダプターと LAN ケーブルを抜いてください。'), '電源アダプターと LAN ケーブルを差してください。'), null);
+  assert.equal(inheritedDevice(before('AP の電源アダプターを抜いてください。'), '電源アダプターを確かめてください。'), null);
+});
+
+test('機器の引き継ぎは、ページの ① と ② をまたがない。「この絵は外す」はそのまま効く', () => {
+  const manual = {
+    statements: [
+      { id: 'STM-001', text: 'AP の電源アダプターを抜いてください。', library: null },
+      { id: 'STM-002', text: '電源アダプターを差してください。', library: null },
+      { id: 'STM-003', text: '電源アダプターを差し直してください。', library: null },
+    ],
+    figures: [{ step: 'STM-001', text: 'AP の電源アダプターを抜いてください。', items: [{ part: 'router', label: 'AP' }, { part: 'power', label: '電源アダプター' }] }],
+  };
+  const page = { id: 'T1', first_steps: ['STM-001', 'STM-002'], steps: ['STM-003'], source: 'interview' };
+  const details = pageFigureDetails(page, manual);
+  assert.deepEqual([...details.keys()], ['STM-001', 'STM-002']);
+  assert.equal(details.get('STM-002').kind, 'inherited');
+  assert.equal(details.get('STM-002').from, 'STM-001');
+  // 確認の画面では、どの手順から機器を引き継いだかを見せる
+  assert.deepEqual(figureLines(page, manual), [
+    'STM-001「AP の電源アダプターを抜いてください。」の絵：ルーター・無線 AP「AP」 → 電源プラグ・電源アダプター「電源アダプター」',
+    'STM-002「電源アダプターを差してください。」の絵：ルーター・無線 AP「AP」 → 電源プラグ・電源アダプター「電源アダプター」（機器は STM-001「AP の電源アダプターを抜いてください。」から）',
+  ]);
+  assert.deepEqual([...pageFigureDetails(page, { ...manual, figure_off: ['STM-002'] }).keys()], ['STM-001']);
+  // 自由に足した項目のページには付けない
+  assert.equal(pageFigureDetails({ ...page, source: 'free' }, manual).size, 0);
 });

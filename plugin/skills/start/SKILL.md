@@ -111,12 +111,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikitsugi.mjs" <コマンド>
 ### writer
 Writer は1回に1つの部分だけを書きます。`status` の `round` と `part` を使います。`part` は `common`（連絡先や手順ページの一覧など）か、手順ページの ID（`T1` など）か、`symptoms`（手順ページのない困りごとを、ページにするか外すかの判断）です。
 
-1. `hikitsugi writer-task <round> <part>` を実行します。
+1. `hikitsugi writer-task <round> <part>` を実行します。出力に待つ時間の目安（「約 N 分かかります」）の行があれば、**Writer を呼ぶ前に**、その行を言い換えずにそのまま本人に伝えます。
 2. `hikitsugi:writer` に次を依頼します。
    > `hikitsugi-work/survey.json`、`hikitsugi-work/transcript.json`、`hikitsugi-work/library.json`、`hikitsugi-work/writer-task.json` を読み、`writer-task.json` を task として、その部分の結果の JSON だけを `hikitsugi-work/writer-<round>-<part>.json` に保存してください。保存する形は `hikitsugi-work/writer-format.json` です。項目の名前と値は、このとおりにしてください。
-3. `hikitsugi check-writer <round> <part>` を実行します。問題が表示されたら、その内容を Writer に structure_problems として伝えて直してもらいます。
+3. `hikitsugi check-writer <round> <part>` を実行します。問題が表示されたら、その内容を Writer に structure_problems として伝えて直してもらいます。通ったら、出力の進み具合の行（「15 枚中 4 枚が終わりました。残り約 N 分です。」など）を、**次の部分に進む前に**、そのまま本人に伝えます。
 
-`status` が次の部分を示すあいだ、繰り返します。1ページごとに、いくつ終わったかを短く伝えます。
+`status` が次の部分を示すあいだ、繰り返します。目安と進み具合はプログラムが実測から出しているので、自分で計算し直したり、省いたりしません。
 
 ### editor
 `hikitsugi:plain-japanese-editor` に次を依頼します。
@@ -125,7 +125,7 @@ Writer は1回に1つの部分だけを書きます。`status` の `round` と `
 `round` が 2 以上のときは、次も加えます。
 > `hikitsugi-work/editor-findings-<round>.json` を findings として読み、そこにある文章だけを直してください。すでにある用語の説明は作り直しません。
 
-終わったら `hikitsugi merge-edits <round>` を実行します。問題が残ったと表示されたら、`plain-findings-<round>.json` を findings として渡し、同じ保存先へ前回の内容に追記する形で1回だけ直してもらって、もう一度 `merge-edits` を実行します。`long_sentences` の指摘に `glossary_term` があるものは用語の説明の文なので、`rewrites` ではなく、`glossary` に同じ語の説明を直して追記してもらいます。
+終わったら `hikitsugi merge-edits <round>` を実行します。出力の最後に、根拠と照らす段の目安（「約 N 分、途中の表示はありません」）があれば、Verifier を呼ぶ前に、そのまま本人に伝えます。問題が残ったと表示されたら、`plain-findings-<round>.json` を findings として渡し、同じ保存先へ前回の内容に追記する形で1回だけ直してもらって、もう一度 `merge-edits` を実行します。`long_sentences` の指摘に `glossary_term` があるものは用語の説明の文なので、`rewrites` ではなく、`glossary` に同じ語の説明を直して追記してもらいます。
 
 ### verifier
 `hikitsugi:verifier` に次を依頼します。

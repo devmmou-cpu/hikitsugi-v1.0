@@ -66,7 +66,7 @@ test('提出したリポジトリへの push と force push を見つけ、origi
   for (const command of ['git push --force origin main', 'git push -f origin main', 'git push origin main -f', 'git push -uf origin x', 'git push --force-with-lease origin main', 'git push --force-with-lease=main origin main', 'git push origin +main', 'git push origin +HEAD:main', 'git push --mirror origin']) {
     assert.match(forbiddenPush(command), /force/, command);
   }
-  for (const command of ['git push', 'git push origin main', 'git push origin submission-20261108', 'git push -u origin post/stage1-update', 'git push https://github.com/devmmou-cpu/hikitsugi-next.git main', 'git status; echo submitted', 'git commit -m "force"', 'git push origin main; echo -f']) {
+  for (const command of ['git push', 'git push origin main', 'git push origin submission-20261108', 'git push -u origin post/stage1-update', 'git push https://github.com/devmmou-cpu/hikitsugi-next.git main', 'git push https://github.com/devmmou-cpu/hikitsugi-v1.0.git main', 'git push origin main v1.0', 'git status; echo submitted', 'git commit -m "force"', 'git push origin main; echo -f']) {
     assert.equal(forbiddenPush(command), null, command);
   }
 });

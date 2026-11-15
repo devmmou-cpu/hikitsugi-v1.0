@@ -127,6 +127,41 @@ export function arrowSideProblems(figure, stepText, kit = loadKit()) {
   return [`${figure.step}：矢印の絵には、機器と、差す・抜く物の両方が要ります（差す先を推測しません）`];
 }
 
+/** 文に出てくる部品と、その語（同じ部品の語が複数あれば長い方）。ids の順。 */
+function mentionedParts(text, ids, kit) {
+  const plain = compact(text);
+  return ids.flatMap((id) => {
+    const part = kit.parts[id];
+    const words = (part?.words ?? []).filter((word) => plain.includes(compact(word))).sort((a, b) => compact(b).length - compact(a).length);
+    return words.length ? [{ part: id, word: words[0] }] : [];
+  });
+}
+
+/**
+ * 機器の引き継ぎ（11/15、本人の決定）。矢印の動詞の文に、動かす物（1 つ）はあるが機器がないとき、
+ * 同じ手順の並びの前の手順で、同じ物と一緒に出てきた機器が 1 つだけなら、その機器を絵に出す。
+ * 2 つ以上あるとき、前の手順にないときは null（矢印の絵を付けない）。決めるのはプログラムで、エージェントに選ばせない。
+ * @param before 同じ並びの、この手順より前の文 [{ id, text }]
+ * @returns { items, from } または null。from は機器を引き継いだ文の ID
+ */
+export function inheritedDevice(before, stepText, kit = loadKit()) {
+  if (!arrowOf(stepText, kit)) return null;
+  const things = mentionedParts(stepText, ARROW_THINGS, kit);
+  if (things.length !== 1 || mentionedParts(stepText, ARROW_DEVICES, kit).length) return null;
+  const [thing] = things;
+  const found = new Map();
+  for (const previous of before) {
+    if (!mentionedParts(previous.text, [thing.part], kit).length) continue;
+    for (const device of mentionedParts(previous.text, ARROW_DEVICES, kit)) {
+      const key = `${device.part}:${compact(device.word)}`;
+      if (!found.has(key)) found.set(key, { ...device, from: previous.id });
+    }
+  }
+  if (found.size !== 1) return null;
+  const [device] = found.values();
+  return { items: [{ part: device.part, label: device.word }, { part: thing.part, label: thing.word }], from: device.from };
+}
+
 const UNSAFE = /[<>&"'`]/;
 export const OBJECT_LIMIT = 3;
 export const LABEL_LIMIT = 12;
@@ -207,26 +242,42 @@ export function figureCandidate(statement, kit = loadKit()) {
 }
 
 /**
- * 手順の並びに付ける絵（キーの絵と、部品を並べる絵）を、文章の ID ごとの SVG で返す。
+ * 手順の並び 1 つに付ける絵の中身を、文章の ID ごとに返す。{ svg, kind, items, from }
+ * kind：keys（キーの絵）、parts（並べ方の記録から）、inherited（前の手順から機器を引き継いだ矢印の絵）
  * 承認済みの手描きの図がある手順（skip）、前任者が外した手順（figure_off）、検査に通らない並べ方には付けない。
+ * 機器の引き継ぎは並びの中だけで見るので、ページの ① と ② は別の並びとして渡す。
  */
-export function stepFigures(stepIds, manual, { kit = loadKit(), skip = new Set() } = {}) {
+export function stepFigureDetails(stepIds, manual, { kit = loadKit(), skip = new Set() } = {}) {
   const byId = new Map(manual.statements.map((statement) => [statement.id, statement]));
   const off = new Set(manual.figure_off ?? []);
   const planned = new Map((manual.figures ?? []).map((figure) => [figure.step, figure]));
   const found = new Map();
+  const before = [];
   for (const id of stepIds ?? []) {
     const statement = byId.get(id);
-    if (!statement || skip.has(id) || off.has(id)) continue;
+    if (!statement) continue;
+    const seen = before.slice();
+    before.push({ id, text: statement.text });
+    if (skip.has(id) || off.has(id)) continue;
     const keys = readKeys(statement.text);
     if (keys) {
-      found.set(id, keyFigure(keys));
+      found.set(id, { svg: keyFigure(keys), kind: 'keys', keys: keys.keys });
       continue;
     }
     const figure = planned.get(id);
-    // 並べ方を決めたときと文が変わっていれば（更新で直した手順）、古い並べ方は使わない
+    // 並べ方を決めたときと文が変わっていれば（更新で直した手順）、古い並べ方は使わない。
     // 矢印の絵の決まりは、決まりの前に記録した並べ方にも効かせる
-    if (figure && figure.text === statement.text && !arrowSideProblems(figure, statement.text, kit).length) found.set(id, partsFigure(figure, statement.text, kit).svg);
+    if (figure && figure.text === statement.text && !arrowSideProblems(figure, statement.text, kit).length) {
+      found.set(id, { svg: partsFigure(figure, statement.text, kit).svg, kind: 'parts', items: figure.items });
+      continue;
+    }
+    const inherited = inheritedDevice(seen, statement.text, kit);
+    if (inherited) found.set(id, { svg: partsFigure({ step: id, items: inherited.items }, statement.text, kit).svg, kind: 'inherited', items: inherited.items, from: inherited.from });
   }
   return found;
+}
+
+/** 手順の並び 1 つに付ける絵を、文章の ID ごとの SVG で返す。 */
+export function stepFigures(stepIds, manual, options = {}) {
+  return new Map([...stepFigureDetails(stepIds, manual, options)].map(([id, detail]) => [id, detail.svg]));
 }

@@ -2,7 +2,11 @@
 
 兼任の情シス担当者が退職するときに、聞かれたことに答えるだけで、IT 未経験の後任が使える取扱説明書を作る Claude Code プラグイン。Built with Claude: Japan 2026 の個人参加作品。
 
-大会に提出した版は `submission-20261108` のタグ。提出したリポジトリは remote の `submitted` で、変更しない。開発は remote の `origin`（hikitsugi-next）で続ける。
+大会に提出した版は `submission-20261108` のタグ。版の番号は付けず「大会に提出した版」と呼ぶ。提出したリポジトリ（hikitsugi）は remote の `submitted` で、変更しない。開発は remote の `origin` で続ける。
+
+公開する版は v1.0（完成版）。リポジトリ名は `hikitsugi-v1.0`、公開のときのタグは `v1.0`（11/15 の本人の決定）。
+- GitHub での名前の変更（hikitsugi-next → hikitsugi-v1.0）は本人が行う。本人が「名前を変えた」と伝えたら、`git remote set-url origin https://github.com/devmmou-cpu/hikitsugi-v1.0.git` を実行する。それまで実行しない
+- 公開後に不具合を直したときは、リポジトリ名を変えず、README の「大会に提出した版から変えたこと」の「公開後の変更」に日付つきで書く
 
 ## コマンド
 - `npm test`：全テスト。依存なし、ネットワークなし。撮影のテスト（Chrome）は、ほかのテストのあとに 1 つずつ流す（`scripts/run-tests.mjs`）。止まれば時間切れで失敗にする

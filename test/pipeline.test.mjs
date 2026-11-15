@@ -421,10 +421,11 @@ test('/hikitsugi:start：段階をたどって取扱説明書まで進み、途�
     assert.throws(() => hikitsugi('open-list', [], 'ない'), /もう聞いています/);
     // 共通部分、ページの順に、1回に1つずつ書く
     assert.deepEqual(nextStep(work), { step: 'writer', round: 1, part: 'common' });
-    hikitsugi('writer-task', ['1', 'common']);
+    // 書く段に入る前に、待つ時間の目安を出す（11/15）
+    assert.match(hikitsugi('writer-task', ['1', 'common']), /約 \d+〜\d+ 分かかります。画面が止まって見えても動いています。/);
     assert.equal(JSON.parse(readFileSync(join(work, 'writer-task.json'), 'utf8')).part, 'common');
     write('writer-1-common.json', pieces().common);
-    assert.match(hikitsugi('check-writer', ['1', 'common']), /残り 1 件/);
+    assert.match(hikitsugi('check-writer', ['1', 'common']), /残り 1 件[\s\S]*手順のページは 1 枚です。残り約 \d+ 分です。/);
     assert.deepEqual(nextStep(work), { step: 'writer', round: 1, part: 'T1' });
     hikitsugi('writer-task', ['1', 'T1']);
     const task = JSON.parse(readFileSync(join(work, 'writer-task.json'), 'utf8'));
@@ -445,7 +446,8 @@ test('/hikitsugi:start：段階をたどって取扱説明書まで進み、途�
     write('writer-1-common.json', leakTask.revision.previous);
     assert.throws(() => hikitsugi('check-writer', ['1', 'common']), /載せ漏れが残っています/);
     write('writer-1-common.json', fillMissing(leakTask.revision.previous, leakTask.revision.missing));
-    assert.match(hikitsugi('check-writer', ['1', 'common']), /書きました/);
+    // 最後の部分が終わったら、言葉を直す段と根拠と照らす段の目安を出す
+    assert.match(hikitsugi('check-writer', ['1', 'common']), /書きました[\s\S]*ページを書き終えました。このあと、言葉を直す段（約 \d+ 分）と、根拠と照らす段（約 \d+ 分）が続きます。/);
     assert.ok(!JSON.parse(readFileSync(join(work, 'state.json'), 'utf8')).leaks);
     const written = JSON.parse(readFileSync(join(work, 'manual-1.json'), 'utf8'));
     assert.equal(written.company_name, 'テスト 会社');
@@ -459,6 +461,8 @@ test('/hikitsugi:start：段階をたどって取扱説明書まで進み、途�
     write('editor-1.json', { rewrites: [{ id: firstStep, text: '電源は切らないでください。' }], glossary: glossaryEdits() });
     const merged = hikitsugi('merge-edits', ['1']);
     assert.match(merged, new RegExp(`手順の形でなくなったので、元の文のまま残しました：${firstStep}（直した文「電源は切らないでください。」は使っていません）`));
+    // 根拠と照らす段の前に、黙る時間の目安を出す
+    assert.match(merged, /このあと、すべての文を根拠と照らします。約 \d+ 分、途中の表示はありません。/);
     assert.equal(nextStep(work).step, 'verifier');
 
     assert.throws(() => hikitsugi('render'), /合格していない/);

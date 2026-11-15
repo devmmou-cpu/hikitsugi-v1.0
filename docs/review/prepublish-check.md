@@ -23,12 +23,12 @@ v1.0 の順番 5「公開の準備」の 5 と 6。Claude が行い、本人の�
 ### 利用者が打つ行の数
 | 打つ場所 | 行 |
 |---|---|
-| ターミナル | `claude plugin install hikitsugi --marketplace <公開するリポジトリ>` |
+| ターミナル | `claude plugin install hikitsugi --marketplace devmmou-cpu/hikitsugi-v1.0` |
 | ターミナル | `mkdir handover && cd handover` |
 | ターミナル | `claude` |
 | Claude Code | `/hikitsugi:start` |
 
-合計 4 行。`<公開するリポジトリ>` は、リポジトリ名が決まってから README に書く（仮の名前は書かない）。今の README の「B. 動かす」は、同梱の調査データを使うためにリポジトリを clone する手順で、行の数は同じ 4 行（clone、フォルダ、`claude --plugin-dir`、`/hikitsugi:start`）。
+合計 4 行（README の「使ってみる」）。Windows なしで試すときは、同梱の架空の調査データを取る 1 行（`curl -LO …/survey.json`）が増えて 5 行。
 
 ### 公開する前（Private のあいだ）の確かめ方
 1. **手元：** 次の 4 行で、上の表と同じことを確かめられる（`<作業用>` は空のフォルダ）。
@@ -38,7 +38,7 @@ v1.0 の順番 5「公開の準備」の 5 と 6。Claude が行い、本人の�
    mkdir <作業用>/handover && cd <作業用>/handover
    claude -p "/hikitsugi:start"
    ```
-2. **GitHub の Private のまま（本人の PC）：** 1 の 2 行目の `<リポジトリのフォルダ>` を `<owner>/<repo>` にする。手元の git の認証で取得できるかは、まだ確かめていない
+2. **GitHub の Private のまま（本人の PC）：** 1 の 2 行目の `<リポジトリのフォルダ>` を `devmmou-cpu/hikitsugi-v1.0`（改名の前は `devmmou-cpu/hikitsugi-next`）にする。手元の git の認証で取得できるかは、まだ確かめていない
 3. **公開したあと：** GitHub にログインしていない環境（別の設定フォルダと、認証のない git）で 1 と同じことをし、最初の質問が出るまでを確かめる
 
 ## 2. 秘密情報の点検（すべての履歴）
@@ -78,11 +78,35 @@ holdout の 2 社のダミーは、開かない約束なので、この走査で
 | 作業フォルダ 6 つ（`hikitsugi`、`hikitsugi-live`、`hikitsugi-r1`、`hikitsugi-review`、`hikitsugi-survey`、`hikitsugi-visual`） | そのまま | 消さない。公開に関係しない |
 | `hikitsugi-r1` の未登録ファイル 2 つ（`docs/design/landing-spec.md`、`docs/design/plain-words.md`） | 未登録のまま | 触らない。中身は、コミット `c919e9e`（11/3）で足した版と同じで、履歴に残っている |
 | タグ（`stage1`、`stage2`、`submission-20261108`、`night-base/*` 5 つ、`day-base/*` 1 つ） | 手元 | 公開するリポジトリには `stage*` と `submission-20261108` と v1.0 のタグだけを送り、`night-base/*` と `day-base/*` は送らない |
-| origin（hikitsugi-next）の `post/stage1-update`、`post/v1-final` | これから送る | origin をそのまま公開するなら見える。`main` に入ったあとで消すかは本人の判断（消すのは本人の操作） |
+| origin（今の名前は hikitsugi-next。本人が hikitsugi-v1.0 に変える）の `post/stage1-update`、`post/v1-final` | これから送る | origin をそのまま公開するなら見える。`main` に入ったあとで消すかは本人の判断（消すのは本人の操作） |
 | `submitted`（提出したリポジトリ） | 変えない | 変えない。ABOUT からの誘導は順番 7 |
 
-## 6. 公開の前に本人が決めること（仮の値は書いていない）
-- 公開するリポジトリ名（README の入れる手順と、マーケットプレイスの `<owner>/<repo>` に入る）
-- オコジョソフトのリンク先、感想の受け口
-- サンプルを、リンク 1 つで開ける場所に置くか
-- プラグインの版の番号（今は `0.1.0`。v1.0 のタグのときに `1.0.0` にする案）と、アイコンを用意するか（公式の一覧に出す場合だけ要る）
+## 6. サンプルを置く場所の案（架空のサンプルだけ。本人の了承 11/15）
+入口のページ `samples/okojo/index.html` を作った。PC 用（`manual.html`）と、スマホ用の束の 15 ファイルへのリンクだけのページで、JavaScript も外部の読み込みもない。README の「今すぐ見る」は、この入口を開く。
+
+| 案 | 中身 | よい所 | 気になる所 |
+|---|---|---|---|
+| **A（推す）：`gh-pages` ブランチに、サンプルだけを置く** | `index.html`、`manual.html`、`phone/`、`.nojekyll` だけのブランチ。GitHub の Pages の設定で、このブランチの先頭を公開 | 公開されるのはサンプルだけ。仕組みが単純で、外部の道具が要らない | サンプルを作り直したら、ブランチも手で入れ替える |
+| B：GitHub Actions で `samples/okojo/` を公開 | 公式の Pages 用の Actions で、main に push するたびに置き直す | 入れ替えを忘れない | ワークフローのファイルが増える。外部の道具（Actions）に頼る |
+| C：main の `/docs` を公開 | サンプルを `docs/` の下に移す | ブランチが増えない | 設計書などの文書もまとめて公開される |
+
+**URL（案 A・B とも）：** 入口 https://devmmou-cpu.github.io/hikitsugi-v1.0/ 、PC 用 …/manual.html 、スマホ用 …/phone/（入口から 1 つずつ開く。Pages はフォルダの一覧を出さないため）。
+
+**案 A の手順（本人が実行。公開と同じときに）：**
+```
+git worktree add --orphan -b gh-pages ../hikitsugi-pages
+cp -R samples/okojo/index.html samples/okojo/manual.html samples/okojo/phone ../hikitsugi-pages/
+touch ../hikitsugi-pages/.nojekyll
+git -C ../hikitsugi-pages add -A
+git -C ../hikitsugi-pages commit -m "サンプル（架空のオコジョ精工）の公開用"
+git push origin gh-pages
+```
+そのあと、GitHub のリポジトリの Settings → Pages で、Source を「Deploy from a branch」、Branch を `gh-pages` の `/ (root)` にする。
+
+**Private のあいだの確かめ方：** 手元で、入口のフォルダを HTTP で配って開く（`python3 -m http.server` を `samples/okojo` で実行し、ブラウザーで `http://127.0.0.1:8000/` を開く）。11/15 に Claude がこの形で確かめ、入口のリンク 16 件（PC 用 1、スマホ用 15）がすべて開けた。Private のリポジトリで Pages を有効にすると（有料の契約が要る）、リポジトリが Private でもサイトは誰でも見られるので、有効にするのは公開と同じときをすすめる。
+
+## 7. 公開の前に本人が決めること（仮の値は書いていない）
+- 公開するリポジトリ名：**決定（11/15）** `hikitsugi-v1.0`。README の入れる手順、サンプルの URL、リンクは新しい名前で書いた
+- サンプルを、リンク 1 つで開ける場所に置くか：**決定（11/15）** 置く。置き方は上の 6 の案 A〜C から選ぶ
+- オコジョソフトのリンク先：**決定（11/15）** https://okojyo-soft.com/ 。感想の受け口：**決定（11/15）** GitHub の Issues（報告は任意）
+- プラグインの版の番号：公開する版を v1.0 と呼ぶ決定に合わせ、`1.0.0` にした。アイコンを用意するか（公式の一覧に出す場合だけ要る）

@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" role="img" aria-label="AI の書いた文を、根拠と照らして確かめる流れ">
+  <style>
+    text { font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif; fill: #2b2118; }
+    .title { font-size: 17px; font-weight: 700; }
+    .body { font-size: 14px; }
+    .tag { font-size: 13px; font-weight: 700; fill: #ffffff; }
+    .note { font-size: 13px; fill: #6b5a4a; }
+  </style>
+  <rect x="0" y="0" width="960" height="420" fill="#f7f4ef"/>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a4b1f"/>
+    </marker>
+  </defs>
+
+  <!-- 1 段目 -->
+  <g>
+    <rect x="20" y="30" width="200" height="120" rx="10" fill="#ffffff" stroke="#8a4b1f" stroke-width="2"/>
+    <rect x="20" y="30" width="200" height="28" rx="10" fill="#8a4b1f"/><rect x="20" y="48" width="200" height="10" fill="#8a4b1f"/>
+    <text class="tag" x="120" y="50" text-anchor="middle">根拠</text>
+    <text class="title" x="120" y="84" text-anchor="middle">調査と聞き取り</text>
+    <text class="body" x="120" y="108" text-anchor="middle">PC の設定の読み取り</text>
+    <text class="body" x="120" y="128" text-anchor="middle">前任者の答え（20 問＋）</text>
+  </g>
+  <g>
+    <rect x="255" y="30" width="200" height="120" rx="10" fill="#ffffff" stroke="#8a4b1f" stroke-width="2"/>
+    <rect x="255" y="30" width="200" height="28" rx="10" fill="#8a4b1f"/><rect x="255" y="48" width="200" height="10" fill="#8a4b1f"/>
+    <text class="tag" x="355" y="50" text-anchor="middle">AI が書く</text>
+    <text class="title" x="355" y="84" text-anchor="middle">Writer</text>
+    <text class="body" x="355" y="108" text-anchor="middle">1 文ごとに</text>
+    <text class="body" x="355" y="128" text-anchor="middle">根拠の番号を付ける</text>
+  </g>
+  <g>
+    <rect x="490" y="30" width="210" height="120" rx="10" fill="#ffffff" stroke="#2b2118" stroke-width="2" stroke-dasharray="6 4"/>
+    <rect x="490" y="30" width="210" height="28" rx="10" fill="#2b2118"/><rect x="490" y="48" width="210" height="10" fill="#2b2118"/>
+    <text class="tag" x="595" y="50" text-anchor="middle">プログラムが検査</text>
+    <text class="title" x="595" y="84" text-anchor="middle">形と決まり</text>
+    <text class="body" x="595" y="108" text-anchor="middle">根拠の番号、承認済みの部品</text>
+    <text class="body" x="595" y="128" text-anchor="middle">電話番号、パスワードの形</text>
+  </g>
+  <g>
+    <rect x="735" y="30" width="205" height="120" rx="10" fill="#ffffff" stroke="#8a4b1f" stroke-width="2"/>
+    <rect x="735" y="30" width="205" height="28" rx="10" fill="#8a4b1f"/><rect x="735" y="48" width="205" height="10" fill="#8a4b1f"/>
+    <text class="tag" x="837" y="50" text-anchor="middle">AI が直す</text>
+    <text class="title" x="837" y="84" text-anchor="middle">Editor</text>
+    <text class="body" x="837" y="108" text-anchor="middle">やさしい日本語に。</text>
+    <text class="body" x="837" y="128" text-anchor="middle">事実が変われば元に戻す</text>
+  </g>
+  <line x1="220" y1="90" x2="252" y2="90" stroke="#8a4b1f" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="455" y1="90" x2="487" y2="90" stroke="#8a4b1f" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <line x1="700" y1="90" x2="732" y2="90" stroke="#8a4b1f" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- 2 段目 -->
+  <path d="M837 150 L837 185 L130 185 L130 222" fill="none" stroke="#8a4b1f" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <g>
+    <rect x="20" y="225" width="250" height="130" rx="10" fill="#fff4ea" stroke="#8a4b1f" stroke-width="3"/>
+    <rect x="20" y="225" width="250" height="28" rx="10" fill="#8a4b1f"/><rect x="20" y="243" width="250" height="10" fill="#8a4b1f"/>
+    <text class="tag" x="145" y="245" text-anchor="middle">AI が照らす（いちばん強いモデル）</text>
+    <text class="title" x="145" y="280" text-anchor="middle">Verifier</text>
+    <text class="body" x="145" y="304" text-anchor="middle">すべての文を根拠と照らす</text>
+    <text class="body" x="145" y="324" text-anchor="middle">食い違い・根拠なし・危険</text>
+    <text class="body" x="145" y="344" text-anchor="middle">は差し戻し（2 回まで）</text>
+  </g>
+  <path d="M270 290 L355 290 L355 152" fill="none" stroke="#b3261e" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text class="note" x="362" y="200">差し戻し</text>
+  <g>
+    <rect x="420" y="225" width="240" height="130" rx="10" fill="#ffffff" stroke="#8a4b1f" stroke-width="2"/>
+    <rect x="420" y="225" width="240" height="28" rx="10" fill="#8a4b1f"/><rect x="420" y="243" width="240" height="10" fill="#8a4b1f"/>
+    <text class="tag" x="540" y="245" text-anchor="middle">人が確かめる</text>
+    <text class="title" x="540" y="280" text-anchor="middle">前任者の確認</text>
+    <text class="body" x="540" y="304" text-anchor="middle">ページごとに</text>
+    <text class="body" x="540" y="324" text-anchor="middle">「このままでよい」か「直す」</text>
+  </g>
+  <g>
+    <rect x="700" y="225" width="240" height="130" rx="10" fill="#ffffff" stroke="#2b2118" stroke-width="2" stroke-dasharray="6 4"/>
+    <rect x="700" y="225" width="240" height="28" rx="10" fill="#2b2118"/><rect x="700" y="243" width="240" height="10" fill="#2b2118"/>
+    <text class="tag" x="820" y="245" text-anchor="middle">プログラムが組む</text>
+    <text class="title" x="820" y="280" text-anchor="middle">説明書の画面</text>
+    <text class="body" x="820" y="304" text-anchor="middle">PC 用・スマホ用・印刷</text>
+    <text class="body" x="820" y="324" text-anchor="middle">AI は画面を書かない</text>
+  </g>
+  <line x1="300" y1="250" x2="300" y2="250"/>
+  <line x1="270" y1="245" x2="417" y2="245" stroke="#8a4b1f" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text class="note" x="290" y="237">合格</text>
+  <line x1="660" y1="290" x2="697" y2="290" stroke="#8a4b1f" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text class="note" x="20" y="395">茶色：AI の担当　黒い点線：AI を使わないプログラム　赤い点線：照らして通らない文は、書き直しに戻る</text>
+</svg>

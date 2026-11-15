@@ -20,8 +20,9 @@ import { plainProblems } from '../lib/plain-check.mjs';
 import { pagesForPhrases, phraseProblems, withSearchIndex } from '../lib/search-index.mjs';
 import { applyRetireeCheck } from '../lib/retiree-check.mjs';
 import { composeProcedures, evidenceReader, libraryForAgents, pageScopeNotes } from '../lib/procedures.mjs';
-import { loadKit, readKeys, stepFigures } from '../lib/figure-build.mjs';
-import { figureCandidatesOf, partsForPlanner, validateFigures } from '../lib/figures.mjs';
+import { loadKit } from '../lib/figure-build.mjs';
+import { editorNotice, pageDoneNotice, pagesPlannedNotice, resendDoneNotice, verifierNotice, writingStartNotice } from '../lib/progress.mjs';
+import { figureCandidatesOf, figureLines, partsForPlanner, validateFigures } from '../lib/figures.mjs';
 import { chainProblems } from '../lib/records.mjs';
 import { departedNames, takeoverHits } from '../lib/takeover.mjs';
 import { DETAIL_QUESTIONS, KIND_CHOICES, LIST_QUESTION, nextOpenStep, OPEN_LIMIT, openSummary, recordDetail, recordKind, recordList, stopOpen, writableItems } from '../lib/open-items.mjs';
@@ -346,7 +347,11 @@ function writerTask(work, [round, part]) {
   }
   writeJson(join(work, 'writer-task.json'), { ...task, retiree: state.retiree });
   writeJson(join(work, 'writer-format.json'), writerFormat(task.part));
-  return `${part} を書く準備ができました（writer-task.json）`;
+  const ready = `${part} を書く準備ができました（writer-task.json）`;
+  // 書く段に入る前に、待つ時間の目安を出す（最初に作るときの、1 回目の共通部分だけ）
+  if (Number(round) === 1 && part === 'common' && !state.update && !existsSync(join(work, partFile(1, 'common')))) return `${ready}
+${writingStartNotice()}`;
+  return ready;
 }
 
 /** 症状を足すとき、この回の共通部分が決めた新しいページの一覧の行。 */
@@ -444,12 +449,22 @@ function checkWriter(work, [round, part]) {
   const left = parts.filter((name) => name !== part && !isChecked(work, partFile(round, name)));
   if (left.length) {
     markChecked(work, partFile(round, part));
-    return `${part} を確かめました（残り ${left.length} 件）${warnings}`;
+    return `${part} を確かめました（残り ${left.length} 件）${warnings}${state.update ? '' : `\n${writerProgress(parts, left, part, Number(round))}`}`;
   }
   // 最後の部分は、組み立てまで通ってから印を付ける。載せ漏れの書き直しでは、共通部分のファイルは消えている
   const message = assembleRound(work, Number(round));
   if (existsSync(path)) markChecked(work, partFile(round, part));
-  return `${message}${warnings}`;
+  return `${message}${warnings}${state.update ? '' : `\n${editorNotice()}`}`;
+}
+
+/** 書く段の進み具合の 1 行。手順ページは「枚」で数え、手順ページのない困りごとの判断（symptoms）は残りの時間にだけ入れる。 */
+function writerProgress(parts, left, part, round) {
+  if (round > 1) return resendDoneNotice(parts.length - left.length, parts.length);
+  const pages = parts.filter((name) => name !== 'common' && name !== 'symptoms');
+  const extra = left.includes('symptoms') ? 1 : 0;
+  if (part === 'common') return pagesPlannedNotice(pages.length, extra);
+  const leftPages = left.filter((name) => pages.includes(name)).length;
+  return pageDoneNotice(pages.length - leftPages, pages.length, extra);
 }
 
 /** 足すページの行を、一覧の後ろに入れる。すでにある行は足さない。 */
@@ -605,6 +620,8 @@ function mergeEdits(work, [round]) {
   if (problems.long_sentences.length || problems.unexplained_terms.length) {
     notes.push(`残った問題：長い文 ${problems.long_sentences.length} 件、説明のない語 ${problems.unexplained_terms.length} 件（plain-findings-${round}.json）`);
   }
+  // 根拠と照らす段は、いちばん長く黙る。始める前に目安を出す（更新では照らす文が少ないので出さない）
+  if (!readJson(join(work, 'state.json')).update) notes.push(verifierNotice());
   return notes.join('\n');
 }
 
@@ -729,18 +746,6 @@ function reviewFigureOff(work, [stepId]) {
   return `${stepId} の絵を外しました`;
 }
 
-/** 確認の画面に出す、絵の中身の説明（文字）。 */
-function figureLines(page, manual) {
-  const kit = loadKit();
-  const byId = new Map(manual.statements.map((statement) => [statement.id, statement]));
-  const planned = new Map((manual.figures ?? []).map((figure) => [figure.step, figure]));
-  const made = page.source === 'free' ? new Map() : stepFigures([...page.first_steps, ...page.steps], manual);
-  return [...made.keys()].map((id) => {
-    const keys = readKeys(byId.get(id).text);
-    const what = keys ? keys.keys.join(' ＋ ') : planned.get(id).items.map(({ part, label }) => `${kit.parts[part].name}${label ? `「${label}」` : ''}`).join(' → ');
-    return `${id}「${byId.get(id).text}」の絵：${what}`;
-  });
-}
 
 // ---- 前任者の確認 ----
 const textsOf = (manual, ids) => {
@@ -1585,7 +1590,14 @@ function render(work, [outPath]) {
 
 class UsageError extends Error {}
 
-const COMMANDS = {
+/**
+ * 回答を標準入力で受け取るコマンド。CLI はこの一覧のコマンドだけ標準入力を読む（ほかは端末で待たない）。
+ * 受け取る関数（引数が 3 つ）と一覧が食い違うと、回答が空として扱われる（11/15、common-select と common-record が抜けていて、
+ * 実物の流れで定番の症状を選べなかった）。テストで、関数の引数の数と一覧が合っていることを確かめる。
+ */
+export const STDIN_COMMANDS = ['record', 'common-select', 'common-record', 'review-fix', 'dead-end-answer', 'update-add-routine', 'open-list', 'open-detail', 'page-gap-answer', 'after-leaving', 'update-fix', 'update-add', 'update-add-contact', 'update-add-device', 'update-memo'];
+
+export const COMMANDS = {
   status: (work) => JSON.stringify(nextStep(work)),
   init,
   'check-gaps': checkGaps,
@@ -1649,7 +1661,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const [command, ...args] = process.argv.slice(2);
   const work = resolve(process.env.HIKITSUGI_WORK ?? 'hikitsugi-work');
   try {
-    const stdin = ['record', 'review-fix', 'dead-end-answer', 'update-add-routine', 'open-list', 'open-detail', 'page-gap-answer', 'after-leaving', 'update-fix', 'update-add', 'update-add-contact', 'update-add-device', 'update-memo'].includes(command) ? readFileSync(0, 'utf8') : '';
+    const stdin = STDIN_COMMANDS.includes(command) ? readFileSync(0, 'utf8') : '';
     console.log(run(command, args, { work, stdin }));
   } catch (error) {
     if (error instanceof Problem) {
