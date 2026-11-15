@@ -1018,6 +1018,13 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   background: var(--danger-bg);
 }
 
+/* 「記録がありません」（11/15）。エラーや禁止に見えないよう、ふつうの文字色、点線の枠、？ の記号。判定の札とも例外の帯とも違う */
+.band-norecord {
+  color: var(--ink);
+  background: var(--card);
+  border: 1.5px dashed var(--line-strong);
+}
+
 /* まずこれだけ（7-4）。ページ内で唯一の暖色の枠と影 */
 .first {
   padding: 20px;

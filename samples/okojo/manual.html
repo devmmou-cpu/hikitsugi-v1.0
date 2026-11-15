@@ -870,6 +870,11 @@ background: var(--warn-bg);
 color: var(--danger-fg);
 background: var(--danger-bg);
 }
+.band-norecord {
+color: var(--ink);
+background: var(--card);
+border: 1.5px dashed var(--line-strong);
+}
 .first {
 padding: 20px;
 background: var(--card);
@@ -2371,7 +2376,7 @@ content: "";
 <li class="step"><label class="tap"><input type="checkbox" data-check="T2:STM-111"><span class="step-n">3</span><span class="step-body is-short">「PC」の画面で、会社の情報の表の<span class="nb">ドライブ</span>の帯<span class="nb">グラフ</span>を見てください。</span><span class="step-box"><svg class="icon" role="presentation"><use href="#i-check"/></svg></span></label></li>
 </ol>
 <p class="band band-exception"><svg class="icon" role="presentation"><use href="#i-cross"/></svg><span>帯が赤ければ、空きがほとんどありません。</span></p>
-<p class="band band-exception"><svg class="icon" role="presentation"><use href="#i-cross"/></svg><span>空きがほとんどないときの対応は記録がありません。工場の <span class="nb">CAD</span> 担当者に聞いてください（<a class="tap text-link" href="#tab-contacts">連絡先</a>）。</span></p>
+<p class="band band-norecord"><svg class="icon" role="presentation"><use href="#i-help"/></svg><span>空きがほとんどないときの対応は記録がありません。工場の <span class="nb">CAD</span> 担当者に聞いてください（<a class="tap text-link" href="#tab-contacts">連絡先</a>）。</span></p>
 <button type="button" class="tap js-only btn-reset" data-reset>チェックをすべて外す</button>
 </div>
 <div class="part part-contact">
@@ -2501,7 +2506,7 @@ content: "";
 <h2 class="symptom-title" tabindex="-1">工場の Wi-Fi が切れる</h2>
 <div class="verdict"><span class="badge" data-badge="self" title="自分で直せる"><svg class="icon" role="presentation"><use href="#i-check"/></svg><span class="badge-text">自分で直せる</span></span><span class="eta">目安 約3分</span></div>
 <p class="verdict-text">工場の <span class="nb">AP</span> を再起動して、自分で直します。</p>
-<p class="band band-safe"><svg class="icon" role="presentation"><use href="#i-shield"/></svg><span>電源<span class="nb">アダプター</span>を抜いて挿し直すだけの再起動で、後任が自分でやってよい作業です。</span></p>
+<p class="band band-safe"><svg class="icon" role="presentation"><use href="#i-shield"/></svg><span>電源<span class="nb">アダプター</span>を抜いて差し直すだけの再起動で、後任が自分でやってよい作業です。</span></p>
 <section class="first">
 <h3 class="first-kicker">① まずこれだけ <span class="eta">1分</span></h3>
 <div class="first-steps is-many">
@@ -2523,7 +2528,7 @@ content: "";
 <li>工場の Wi-Fi が切れるのは、夏の熱で工場の <span class="nb">AP</span> が止まることが多いです。</li>
 <li>工場の <span class="nb">AP</span> は、工場の入口に近い柱の上にあります。</li>
 </ul></div>
-<p class="band band-exception"><svg class="icon" role="presentation"><use href="#i-cross"/></svg><span><span class="nb">AP</span> を再起動しても工場の Wi-Fi が切れるときの対応は、記録がありません。工場の <span class="nb">CAD</span> 担当者に聞いてください（<a class="tap text-link" href="#tab-contacts">連絡先</a>）。</span></p>
+<p class="band band-norecord"><svg class="icon" role="presentation"><use href="#i-help"/></svg><span><span class="nb">AP</span> を再起動しても工場の Wi-Fi が切れるときの対応は、記録がありません。工場の <span class="nb">CAD</span> 担当者に聞いてください（<a class="tap text-link" href="#tab-contacts">連絡先</a>）。</span></p>
 <p class="tab-link"><a class="tap text-link" href="#tab-contacts">連絡先の一覧を見る</a></p>
 <div class="memo is-empty" data-memo="T4" data-memo-name="工場の Wi-Fi が切れる"></div>
 <p class="memo-nojs">メモは PC 版で書けます</p>
@@ -2625,7 +2630,7 @@ content: "";
 <ol class="steps" role="list">
 <li class="step"><label class="tap"><input type="checkbox" data-check="T6:STM-152"><span class="step-n">1</span><span class="step-body is-short"><span class="nb">カワウソシステムサービス</span>に、古い<span class="nb">世代</span>の削除を<span class="nb">スポット</span>（有償）で依頼してください。</span><span class="step-box"><svg class="icon" role="presentation"><use href="#i-check"/></svg></span></label><p class="step-terms"><a class="tap" href="#g-T6-21">システムとは？</a><a class="tap" href="#g-T6-7">世代とは？</a></p></li>
 </ol>
-<p class="band band-exception"><svg class="icon" role="presentation"><use href="#i-cross"/></svg><span>本文に容量不足以外の理由が書かれていたら、記録がありません。総務課に聞いてください（<a class="tap text-link" href="#tab-contacts">連絡先</a>）。</span></p>
+<p class="band band-norecord"><svg class="icon" role="presentation"><use href="#i-help"/></svg><span>本文に容量不足以外の理由が書かれていたら、記録がありません。総務課に聞いてください（<a class="tap text-link" href="#tab-contacts">連絡先</a>）。</span></p>
 <button type="button" class="tap js-only btn-reset" data-reset>チェックをすべて外す</button>
 </div>
 <div class="part part-contact">
@@ -2702,7 +2707,7 @@ content: "";
 <li class="step"><label class="tap"><input type="checkbox" data-check="T7:STM-162"><span class="step-n">1</span><span class="step-body is-short">総務課と社長に、すぐ連絡してください。</span><span class="step-box"><svg class="icon" role="presentation"><use href="#i-check"/></svg></span></label></li>
 </ol>
 <p class="goal"><svg class="icon" role="presentation"><use href="#i-check"/></svg><span>画面の右下の<span class="nb">ネットワーク</span>の<span class="nb">マーク</span>に×が付けば、切れています。</span></p>
-<p class="band band-exception"><svg class="icon" role="presentation"><use href="#i-cross"/></svg><span>社員から不審な<span class="nb">メール</span>を知らされたあとの対応は記録がありません。総務課に聞いてください（<a class="tap text-link" href="#tab-contacts">連絡先</a>）。</span></p>
+<p class="band band-norecord"><svg class="icon" role="presentation"><use href="#i-help"/></svg><span>社員から不審な<span class="nb">メール</span>を知らされたあとの対応は記録がありません。総務課に聞いてください（<a class="tap text-link" href="#tab-contacts">連絡先</a>）。</span></p>
 <button type="button" class="tap js-only btn-reset" data-reset>チェックをすべて外す</button>
 </div>
 <div class="part part-contact">
@@ -2883,7 +2888,7 @@ content: "";
 </ol>
 <p class="goal"><svg class="icon" role="presentation"><use href="#i-check"/></svg><span>総務の PC で共有<span class="nb">フォルダ</span>が開ければ、戻っています。</span></p>
 <p class="band band-exception"><svg class="icon" role="presentation"><use href="#i-cross"/></svg><span><span class="nb">サーバー</span>が動かないときは、<span class="nb">イイズナソフト</span>に連絡してください。</span></p>
-<p class="band band-exception"><svg class="icon" role="presentation"><use href="#i-cross"/></svg><span><span class="nb">NAS</span> が動かないときの対応は記録がありません。社長に聞いてください（<a class="tap text-link" href="#tab-contacts">連絡先</a>）。</span></p>
+<p class="band band-norecord"><svg class="icon" role="presentation"><use href="#i-help"/></svg><span><span class="nb">NAS</span> が動かないときの対応は記録がありません。社長に聞いてください（<a class="tap text-link" href="#tab-contacts">連絡先</a>）。</span></p>
 <button type="button" class="tap js-only btn-reset" data-reset>チェックをすべて外す</button>
 </div>
 <div class="part part-contact">

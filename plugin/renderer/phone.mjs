@@ -22,7 +22,7 @@ import { pageFigures } from '../lib/figures.mjs';
 import { pageScopeNotes } from '../lib/procedures.mjs';
 import { missingNote } from '../lib/page-quality.mjs';
 import { notConsultedLabels } from '../lib/common-symptoms.mjs';
-import { NO_PAGE_HEADING, NO_PAGE_NOTE, MEMO_NO_JS, actionHtml, contactGuide, hoursIconName, BADGE_ICONS, BADGE_LABELS, CATEGORY_LABELS, checkInput, compactCss, esc, evidenceLines, ICONS, infoTables, makeContext, pageTerms, stepParts, telHtml } from './render.mjs';
+import { NO_PAGE_HEADING, NO_PAGE_NOTE, NO_RECORD, MEMO_NO_JS, actionHtml, contactGuide, hoursIconName, BADGE_ICONS, BADGE_LABELS, CATEGORY_LABELS, checkInput, compactCss, esc, evidenceLines, ICONS, infoTables, makeContext, pageTerms, stepParts, telHtml } from './render.mjs';
 import { STYLES } from './styles.mjs';
 
 const SYMPTOM_NAME_MAX = 30;
@@ -69,6 +69,8 @@ h3 { margin-top: var(--s4); font-size: 17px; }
 .step-figure { display: block; width: 100%; max-width: 320px; height: auto; margin-top: var(--s2); color: var(--ink); }
 .goal { margin-top: var(--s3); padding: var(--s2) var(--s3); color: var(--ok-fg); background: var(--ok-bg); border-radius: 8px; }
 .band { margin-top: var(--s3); padding: var(--s2) var(--s3); background: var(--card-2); border-radius: 8px; }
+.band-norecord { display: flex; gap: var(--s2); background: var(--card); border: 1.5px dashed var(--line-strong); }
+.band-norecord svg { flex: none; width: 20px; height: 20px; margin-top: 4px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .notes, .phone-steps { padding-left: 1.5em; }
 .notes li, .phone-steps li { margin-top: var(--s2); }
 .step-note { font-size: 15px; color: var(--ink-2); }
@@ -84,7 +86,7 @@ code, kbd { font-family: ui-monospace, monospace; font-size: .95em; }
 .tel > span + span { margin-left: .3em; }
 .num { margin-top: var(--s2); font-size: 22px; font-weight: 700; line-height: 1.3; letter-spacing: .02em; }
 .note { margin-top: var(--s1); font-size: 15px; color: var(--ink-2); }
-.no-phone { margin-top: var(--s2); font-weight: 700; color: var(--danger-fg); }
+.no-phone { font-weight: 700; }
 .label { margin-top: var(--s3); font-size: 15px; font-weight: 700; }
 .contact-hours { display: flex; gap: var(--s2); align-items: flex-start; }
 .contact-hours svg { flex: none; width: 20px; height: 20px; margin-top: 4px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--ink-2); }
@@ -134,6 +136,8 @@ ${[...footLines, 'ほかの症状は、フォルダの一覧から開いてく�
 }
 
 /** 判定のバッジ。PC 用と同じ色と形で、図形はこのファイルの中に持つ（ページ内の参照は動かないため）。 */
+/** 「記録がありません」の帯（11/15）。PC 用と同じく、点線の枠と ？ の記号。文は変えない */
+const noRecordBand = (inner, extra = '') => `<p class="band band-norecord${extra ? ` ${extra}` : ''}"><svg viewBox="0 0 24 24" role="presentation">${ICONS.help}</svg><span>${inner}</span></p>`;
 const badgeHtml = (value) => `<span class="badge" data-badge="${esc(value)}"><svg viewBox="0 0 24 24" role="presentation">${ICONS[BADGE_ICONS[value]]}</svg><span>${esc(BADGE_LABELS[value])}</span></span>`;
 
 const PHONE_NOTE = '番号を長押しすると、発信できます。';
@@ -149,7 +153,7 @@ function contactHtml(ctx, contact, sayLabel, sayId) {
     `<h3 class="contact-name">${esc(contact.name)}<span class="contact-role">${esc(ctx.raw(contact.role))}</span></h3>`,
     // 受付を番号の上に置く。長押しのメニューが番号の下の行に重なるため（本人の実機）
     contact.hours ? `<p class="contact-hours"><svg viewBox="0 0 24 24" role="presentation">${ICONS[hoursIconName(ctx.raw(contact.hours))]}</svg><span>${ctx.text(contact.hours)}</span></p>` : '',
-    !contact.phone && contact.id.startsWith('VEN-') ? '<p class="no-phone">電話番号の記録がありません</p>' : contact.phone ? `<p class="num">${telHtml(contact.phone)}</p>\n<p class="note">${PHONE_NOTE}</p>` : '',
+    !contact.phone && contact.id.startsWith('VEN-') ? noRecordBand('電話番号の記録がありません', 'no-phone') : contact.phone ? `<p class="num">${telHtml(contact.phone)}</p>\n<p class="note">${PHONE_NOTE}</p>` : '',
     sayId ? `<p class="label">${sayLabel}</p>\n${copyBoxHtml(ctx.text(sayId))}` : '',
     '</div>',
   ];
@@ -164,7 +168,7 @@ function symptomHtml(ctx, page, fileTitle) {
   let part = 0;
   const number = () => CIRCLED[part++];
   const internal = contact?.id.startsWith('INH-');
-  const bands = (ids) => ids.map((id) => `<p class="band">${ctx.text(id)}</p>`).join('\n');
+  const bands = (ids) => ids.map((id) => (NO_RECORD.test(ctx.raw(id)) ? noRecordBand(ctx.text(id)) : `<p class="band">${ctx.text(id)}</p>`)).join('\n');
   const goal = (id) => (id ? `<p class="goal">${ctx.text(id)}</p>` : '');
   const scope = pageScopeNotes(page, ctx.manual);
   const scopeNote = (id) => (scope.has(id) ? `<p class="step-note">${esc(scope.get(id))}</p>` : '');
@@ -211,7 +215,7 @@ function symptomHtml(ctx, page, fileTitle) {
     notes,
     info,
     steps,
-    missingNote(page, ctx.manual) ? `<p class="band">${esc(missingNote(page, ctx.manual))}</p>` : '',
+    missingNote(page, ctx.manual) ? noRecordBand(esc(missingNote(page, ctx.manual)), 'missing-note') : '',
     closing,
     noContact,
     MEMO_NO_JS,

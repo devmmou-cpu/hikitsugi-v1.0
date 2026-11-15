@@ -647,8 +647,19 @@ async function main([inputArg, outputArg]) {
           }
         }
         for (const check of COLOR_CHECKS.filter((item) => item.screen === screenName)) {
+          // anyPage：その要素がある症状のページで確かめる（例外の帯と記録なしの帯は、ページごとに出る・出ないが違う）。
+          // どのページにもなければ、見本にない色として report に残すだけにする
+          if (check.anyPage) {
+            const holder = await evaluate(`document.querySelector(${JSON.stringify(`article[id^="symptom-"] ${check.selector}`)})?.closest('article[id^="symptom-"]')?.id ?? ''`);
+            if (!holder) {
+              report.color_absent = [...new Set([...(report.color_absent ?? []), check.selector])];
+              continue;
+            }
+            await go(`#${holder}`);
+          }
           const values = JSON.parse(await evaluate(readCheck(check.selector, ['backgroundColor', 'color', 'borderTopColor'])));
           const where = `${viewport.name} ${screenName} ${check.selector}`;
+          if (check.anyPage) await go(`#${screenOf[screenName]}`);
           if (!values) {
             problems.push(`${where}：要素が見つかりません`);
             continue;

@@ -154,8 +154,17 @@ export function forDisplay(input, { library = loadLibrary() } = {}) {
   for (const statement of merged.statements) if (!inPages.has(statement.id)) withName(statement.id, first);
   statements = deviceText(merged, statements, (id) => statements.get(id)?.text);
 
-  return { ...merged, statements: [...statements.values()], symptom_pages: pages, display_links: links };
+  // 表記をそろえる（「挿す」→「差す」）。画面に出すときだけで、記録（manual.json）の文は変えない。絵の並べ方の記録の文も同じにそろえ、文が変わった扱いにしない
+  const unified = [...statements.values()].map((statement) => (statement.library ? statement : { ...statement, text: unifyNotation(statement.text) }));
+  const figures = merged.figures ? { figures: merged.figures.map((figure) => ({ ...figure, text: unifyNotation(figure.text ?? '') })) } : {};
+  return { ...merged, statements: unified, symptom_pages: pages, display_links: links, ...figures };
 }
+
+/**
+ * 表記をそろえる（11/15、本人の決定）。「挿す」「挿して」「挿し直す」「挿し込む」などの動詞は「差す」の形にする。
+ * 「挿入」「挿絵」のような名詞は変えない。手順部品の文面は変えない（呼ぶ側で部品の文を除く）。
+ */
+export const unifyNotation = (text) => String(text).replace(/挿(?=[さしすせそっ込])/g, '差');
 
 /** 聞き取りの「分からない」「あとで」の質問を短くする。退職する本人の名前は「前任者」にする。 */
 export function shortQuestion(question, retiree = '') {

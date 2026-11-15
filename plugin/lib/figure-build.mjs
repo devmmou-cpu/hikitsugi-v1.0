@@ -92,7 +92,9 @@ export function arrowOf(text, kit = loadKit()) {
   const toward = find(kit.verbs.toward);
   const away = find(kit.verbs.away);
   if (Boolean(toward) === Boolean(away)) return null;
-  return toward ? { direction: 'toward', label: toward[1] } : { direction: 'away', label: away[1] };
+  // 矢印の下の文字は、表記をそろえた形（「挿す」→「差す」。plugin/lib/display.mjs の unifyNotation と同じ）
+  const label = (toward ?? away)[1].replace(/挿(?=[さしすせそっ込])/g, '差');
+  return toward ? { direction: 'toward', label } : { direction: 'away', label };
 }
 
 /** 長押しの文字。秒数は手順の文にあるときだけ。 */

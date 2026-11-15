@@ -312,8 +312,11 @@ const emptyHtml = (text) => `<p class="empty">${esc(text)}</p>`;
 const factsHtml = (ctx, rows) => `<dl class="facts">${rows.map(([label, id, fixed]) => `<dt>${esc(label)}</dt><dd>${fixed === undefined ? ctx.text(id) : esc(fixed)}</dd>`).join('')}</dl>`;
 
 /** 帯。手順の外に置く。安心は盾、分岐は！、例外は×の印を付ける。 */
-const BAND_ICONS = { safe: 'shield', branch: 'alert', exception: 'cross' };
-const bandHtml = (ctx, id, kind) => `<p class="band band-${kind}">${icon(BAND_ICONS[kind])}<span>${ctx.text(id)}</span></p>`;
+const BAND_ICONS = { safe: 'shield', branch: 'alert', exception: 'cross', norecord: 'help' };
+// 「記録がありません」の文は、エラーや禁止に見えないよう、注意として読める見た目（点線の枠と ？ の記号）にする（11/15、本人の決定）。文は変えない
+export const NO_RECORD = /記録がありません/;
+export const noRecordBandHtml = (inner) => `<p class="band band-norecord">${icon(BAND_ICONS.norecord)}<span>${inner}</span></p>`;
+const bandHtml = (ctx, id, kind) => (kind !== 'safe' && NO_RECORD.test(ctx.raw(id)) ? noRecordBandHtml(ctx.text(id)) : `<p class="band band-${kind}">${icon(BAND_ICONS[kind])}<span>${ctx.text(id)}</span></p>`);
 const bandsHtml = (ctx, ids, kind) => ids.map((id) => bandHtml(ctx, id, kind)).join('\n');
 
 /** 直ったと分かる状態。チェック欄を付けない。 */
@@ -690,7 +693,7 @@ function contactPartHtml(ctx, page, contact, heading, leading) {
     '<div class="contact-box">',
     `<h4 class="contact-name">${esc(contact.name)}<span class="contact-role">${esc(ctx.raw(contact.role))}</span></h4>`,
     contact.hours ? hoursHtml(ctx, contact.hours) : '',
-    !contact.phone && contact.id.startsWith('VEN-') ? '<p class="no-phone">電話番号の記録がありません</p>' : contact.phone ? `<div class="call-row">${callHtml(contact.phone)}${copyNumberHtml(contact.phone, statusId)}</div>` : '',
+    !contact.phone && contact.id.startsWith('VEN-') ? noRecordBandHtml('電話番号の記録がありません').replace('class="band band-norecord"', 'class="band band-norecord no-phone"') : contact.phone ? `<div class="call-row">${callHtml(contact.phone)}${copyNumberHtml(contact.phone, statusId)}</div>` : '',
     `<p class="say-label">${internal ? '相談するときの言い方' : '業者に伝える文面'}</p>`,
     `<blockquote class="say" id="${messageId}">${ctx.text(page.fallback.message)}</blockquote>`,
     `<button type="button" class="btn btn-copy tap js-only" data-copy="${messageId}" data-status="${statusId}">文面をコピー</button>`,
@@ -762,7 +765,7 @@ function replyHtml(ctx, page) {
 /** 物に触る手順で、見分け方・待つ時間・確かめ方の記録がないときの決まった文。数字や見分け方は書かない。 */
 export const missingNoteHtml = (ctx, page) => {
   const note = missingNote(page, ctx.manual);
-  return note ? `<p class="band band-exception missing-note">${icon(BAND_ICONS.exception)}<span>${esc(note)}</span></p>` : '';
+  return note ? noRecordBandHtml(esc(note)).replace('class="band band-norecord"', 'class="band band-norecord missing-note"') : '';
 };
 
 function symptomPanel(ctx, page) {
@@ -829,7 +832,7 @@ function contactCard(ctx, contact) {
     '<div class="card contact-box">',
     `<h3 class="contact-name">${esc(contact.name)}<span class="contact-role">${esc(ctx.raw(contact.role))}</span></h3>`,
     contact.hours ? hoursHtml(ctx, contact.hours) : '',
-    !contact.phone && contact.id.startsWith('VEN-') ? '<p class="no-phone">電話番号の記録がありません</p>' : contact.phone ? `<div class="call-row">${callHtml(contact.phone)}${copyNumberHtml(contact.phone, statusId)}</div>` : '',
+    !contact.phone && contact.id.startsWith('VEN-') ? noRecordBandHtml('電話番号の記録がありません').replace('class="band band-norecord"', 'class="band band-norecord no-phone"') : contact.phone ? `<div class="call-row">${callHtml(contact.phone)}${copyNumberHtml(contact.phone, statusId)}</div>` : '',
     contact.phone ? copyStatusHtml(statusId) : '',
     `<p class="say-label">${internal ? '相談のときに伝えること' : '電話で伝えること'}</p>`,
     `<blockquote class="say">${ctx.text(contact.what_to_tell)}</blockquote>`,

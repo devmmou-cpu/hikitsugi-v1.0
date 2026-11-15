@@ -90,7 +90,9 @@ export const COLOR_CHECKS = [
   { screen: 'symptom', selector: '.btn-copy', borderColorVar: '--accent' },
   { screen: 'symptom', selector: '.goal', backgroundVar: '--ok-bg', colorVar: '--ok-fg' },
   { screen: 'symptom', selector: '.band-branch', backgroundVar: '--warn-bg', colorVar: '--warn-fg' },
-  { screen: 'symptom', selector: '.band-exception', backgroundVar: '--danger-bg', colorVar: '--danger-fg' },
+  { screen: 'symptom', selector: '.band-exception', anyPage: true, backgroundVar: '--danger-bg', colorVar: '--danger-fg' },
+  // 「記録がありません」の帯（11/15）：エラーや禁止に見えない、点線の枠と ？ の記号。判定の札とも、例外の帯とも違う色
+  { screen: 'symptom', selector: '.band-norecord', anyPage: true, backgroundVar: '--card', colorVar: '--ink', borderColorVar: '--line-strong' },
   { screen: 'symptom', selector: '.step-n', borderColorVar: '--ink' },
   { screen: 'intro', selector: '.seal', colorVar: '--ink' },
   { screen: 'help', selector: '.chip-secret', colorVar: '--ink' },
