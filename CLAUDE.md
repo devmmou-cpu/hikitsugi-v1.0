@@ -59,7 +59,7 @@
 
 ## 変わらない約束
 - `submitted`（提出したリポジトリ）へは push しない。force push をしない
-- `eval/sets/rater` と `eval/sets/kenaga` を開かない。holdout の評価は v1.0 の最後に1回だけ行い、途中では実行しない
+- `eval/sets/rater` と `eval/sets/kenaga` を開かない。holdout の評価は v1.0 の最後に1回だけ行い、途中では実行しない（11/15 に版 `9e58710` で済んだ。もう流さない）
 - 実在の会社の調査データ、聞き取り、説明書は、どのリポジトリにもコミットしない
 - 古いブランチと worktree を消さない。`hikitsugi-r1` の未登録ファイル2つ（`docs/design/landing-spec.md`、`docs/design/plain-words.md`）に触れない
 - 操作の図（`plugin/library/figures.json`）の文面の変更と「承認済み」への変更も、手順部品と同じく本人の確認を受けたときだけ行う

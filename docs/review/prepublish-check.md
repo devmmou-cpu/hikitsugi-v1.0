@@ -127,7 +127,58 @@ holdout の 2 社のダミーは、開かない約束なので、この走査で
 
 **Private のあいだの確かめ方：** 手元で、入口のフォルダを HTTP で配って開く（`python3 -m http.server` を `samples/okojo` で実行し、ブラウザーで `http://127.0.0.1:8000/` を開く）。11/15 に Claude がこの形で確かめ、入口のリンク 16 件（PC 用 1、スマホ用 15）がすべて開けた。Private のリポジトリで Pages を有効にすると（有料の契約が要る）、リポジトリが Private でもサイトは誰でも見られるので、有効にするのは公開と同じときをすすめる。
 
-## 7. 公開の前に本人が決めること（仮の値は書いていない）
+## 7. 公開の手順（本人が実行する順番。Claude は実行しない）
+`<公開する版>` は、最後の報告に書いた公開する版のコミットの SHA。その前に、報告の「送るコマンド」を実行しておく。
+
+**(1) main に早送りし、タグ v1.0 を付けて送る**
+```
+git push . <公開する版>:refs/heads/main
+git tag -a v1.0 <公開する版> -m "v1.0（完成版）"
+git push origin main v1.0
+```
+1 行目は手元の main の早送り（早送りにならないときは止まる）。
+
+**(2) サンプルだけのブランチを作って送る（案 A。上の 6 と同じ）**
+```
+git worktree add --orphan -b gh-pages ../hikitsugi-pages
+cp -R samples/okojo/index.html samples/okojo/manual.html samples/okojo/phone ../hikitsugi-pages/
+touch ../hikitsugi-pages/.nojekyll
+git -C ../hikitsugi-pages add -A
+git -C ../hikitsugi-pages commit -m "サンプル（架空のオコジョ精工）の公開用"
+git push origin gh-pages
+```
+
+**(3) GitHub の画面で行うこと（リポジトリ hikitsugi-v1.0）**
+1. Settings → General → Danger Zone → Change repository visibility で **Public** にする
+2. Settings → Pages で、Source を「Deploy from a branch」、Branch を `gh-pages` の `/ (root)` にして保存する
+3. Settings → Code security（Advanced Security）で、**Secret Protection** と **Push protection** を有効にする
+4. Settings → General → Features で **Issues** に印があることを確かめ、リポジトリの Issues のタブが開くことを確かめる
+5. 旧リポジトリ（hikitsugi、submitted）の About 欄の変更は、本人が GitHub の画面で行う（Claude Code は触らない）
+
+**(4) 公開のあとに確かめること**
+| 確かめること | やり方 |
+|---|---|
+| サンプルが開く（PC 用とスマホ用） | https://devmmou-cpu.github.io/hikitsugi-v1.0/ を開き、「PC 用の説明書を開く」と、スマホ用の一覧の 1 つを開く。スマホでも開く |
+| README の画像とリンクが開く | README を上から開き、画像（7 種類。図を含む）が出ること、サンプル・Issues・出典・文書のリンクが開くことを確かめる |
+| 入れる 1 行が通る | `claude plugin install hikitsugi --marketplace devmmou-cpu/hikitsugi-v1.0`（「Successfully installed plugin」） |
+| 最初の質問が出る | 空のフォルダで `claude` を開き、`/hikitsugi:start`（会社名と退職する人の名前を聞かれる） |
+| 外し方が通る | `claude plugin marketplace remove hikitsugi` のあと、`claude plugin list` に hikitsugi が出ない |
+| 試すための調査データが取れる | `curl -LO https://raw.githubusercontent.com/devmmou-cpu/hikitsugi-v1.0/main/eval/sets/okojo/input/survey.json` |
+
+**ログインしていない環境で確かめる方法**
+- サンプルと README：ブラウザーのプライベートウィンドウ（GitHub にログインしていない状態）で開く
+- 入れる 1 行：GitHub の認証を使わない設定で、別の設定フォルダに入れる。通れば、公開された中身だけで入れられる
+  ```
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1 CLAUDE_CONFIG_DIR="$(mktemp -d)" claude plugin install hikitsugi --marketplace devmmou-cpu/hikitsugi-v1.0
+  ```
+- `curl` の URL も、同じく認証なしで取れることを確かめる
+
+**(5) origin に残る作業ブランチ（post/stage1-update、post/v1-final）の案**
+- 案：(1) で main がこの 2 本を含むようになったら（`git branch -r --contains origin/post/v1-final` に `origin/main` が出れば）、origin から消す。中身は main とタグに残るので、なくなるものはない。公開したリポジトリの見え方が main 1 本になる
+- 消すのは本人の操作：`git push origin --delete post/stage1-update post/v1-final`
+- 手元のブランチと作業フォルダは消さない（今までどおり）
+
+## 8. 公開の前に本人が決めること（仮の値は書いていない）
 - 公開するリポジトリ名：**決定（11/15）** `hikitsugi-v1.0`。README の入れる手順、サンプルの URL、リンクは新しい名前で書いた
 - サンプルを、リンク 1 つで開ける場所に置くか：**決定（11/15）** 置く。置き方は上の 6 の案 A〜C から選ぶ
 - オコジョソフトのリンク先：**決定（11/15）** https://okojyo-soft.com/ 。感想の受け口：**決定（11/15）** GitHub の Issues（報告は任意）
