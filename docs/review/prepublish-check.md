@@ -101,7 +101,7 @@ holdout の 2 社のダミーは、開かない約束なので、この走査で
 
 | 案 | 中身 | よい所 | 気になる所 |
 |---|---|---|---|
-| **A（推す）：`gh-pages` ブランチに、サンプルだけを置く** | `index.html`、`manual.html`、`phone/`、`.nojekyll` だけのブランチ。GitHub の Pages の設定で、このブランチの先頭を公開 | 公開されるのはサンプルだけ。仕組みが単純で、外部の道具が要らない | サンプルを作り直したら、ブランチも手で入れ替える |
+| **A（推す）：`gh-pages` ブランチに、サンプルだけを置く** | `index.html`、`manual.html`、`phone/`、`.nojekyll`、`.gitignore` だけのブランチ。GitHub の Pages の設定で、このブランチの先頭を公開 | 公開されるのはサンプルだけ。仕組みが単純で、外部の道具が要らない | サンプルを作り直したら、ブランチも手で入れ替える |
 | B：GitHub Actions で `samples/okojo/` を公開 | 公式の Pages 用の Actions で、main に push するたびに置き直す | 入れ替えを忘れない | ワークフローのファイルが増える。外部の道具（Actions）に頼る |
 | C：main の `/docs` を公開 | サンプルを `docs/` の下に移す | ブランチが増えない | 設計書などの文書もまとめて公開される |
 
@@ -115,9 +115,12 @@ holdout の 2 社のダミーは、開かない約束なので、この走査で
    git worktree add --orphan -b gh-pages ../hikitsugi-pages
    cp -R samples/okojo/index.html samples/okojo/manual.html samples/okojo/phone ../hikitsugi-pages/
    touch ../hikitsugi-pages/.nojekyll
+   printf '%s\n' '.DS_Store' '# 秘密情報を入れない（公開用のサンプルだけを置くブランチ）' '.env' '.env.*' '*.pem' '*.key' > ../hikitsugi-pages/.gitignore
    git -C ../hikitsugi-pages add -A
    git -C ../hikitsugi-pages commit -m "サンプル（架空のオコジョ精工）の公開用"
+   node scripts/check-secrets.mjs ../hikitsugi-pages
    ```
+   `.gitignore` は、`.env` などを無視させるために置く（理由は 7 の (2) の注）。点検はコミットのあとに行う（コミットのないブランチでは点検が動かない）。
 2. （公開のとき）`git push origin gh-pages`
 3. （公開のとき）GitHub でリポジトリを Public にする
 4. （公開のとき）Settings → Pages で、Source を「Deploy from a branch」、Branch を `gh-pages` の `/ (root)` にして保存する
@@ -143,10 +146,13 @@ git push origin main v1.0
 git worktree add --orphan -b gh-pages ../hikitsugi-pages
 cp -R samples/okojo/index.html samples/okojo/manual.html samples/okojo/phone ../hikitsugi-pages/
 touch ../hikitsugi-pages/.nojekyll
+printf '%s\n' '.DS_Store' '# 秘密情報を入れない（公開用のサンプルだけを置くブランチ）' '.env' '.env.*' '*.pem' '*.key' > ../hikitsugi-pages/.gitignore
 git -C ../hikitsugi-pages add -A
 git -C ../hikitsugi-pages commit -m "サンプル（架空のオコジョ精工）の公開用"
+node scripts/check-secrets.mjs ../hikitsugi-pages
 git push origin gh-pages
 ```
+注（11/15 の公開で足した手順）：`.gitignore` の行は、最初に書いた手順になかった。11/15 の公開では、本人の承認を受けて Claude が (1) と (2) を実行し、gh-pages に `.gitignore` を足してから送った（gh-pages のコミット `c208fb2`）。足したのは、`.gitignore` がないと、秘密情報の点検（`check-secrets`）の「`.env` などが `.gitignore` で無視されるか」の項目で落ちるため。中身の点検（追跡ファイル、履歴、この PC の名前）は、足す前から問題がなかった。Pages では `.gitignore` もファイルとして配られるが、書いてあるのは無視するファイルの名前の形だけ。
 
 **(3) GitHub の画面で行うこと（リポジトリ hikitsugi-v1.0）**
 1. Settings → General → Danger Zone → Change repository visibility で **Public** にする
