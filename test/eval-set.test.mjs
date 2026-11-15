@@ -114,7 +114,7 @@ test('許可リストにない英字の語を入れると失敗する', () => {
 test('架空の形式でない電話番号を入れると失敗する', () => {
   const problems = withCopy((setDir) => {
     editJson(join(setDir, 'hidden/tanaka_facts.json'), (d) => {
-      d.facts[0].answer += '連絡先は 03-1234-5678 です。';
+      d.facts[0].answer += '連絡先は 03-0000-0299 です。';
     });
   });
   includes(problems, '架空の形式ではない電話番号');
@@ -143,7 +143,7 @@ test('使えない人名、法人名、業者名、IP、ドメインは失敗す
   includes(edit((s) => { s.text = '鈴木さんに連絡します。'; }), '使えない人名');
   includes(edit((s) => { s.text = '株式会社テストに連絡します。'; }), '使えない法人名');
   includes(edit((s) => { s.text = '機器は 10.0.0.1 にあります。'; }), '架空の形式ではない IP');
-  includes(edit((s) => { s.text = '管理画面は admin.okojo-seiko.com です。'; }), '架空の形式ではないドメイン');
+  includes(edit((s) => { s.text = '管理画面は admin.okojo-seiko.example.com です。'; }), '架空の形式ではないドメイン');
   const vendor = withCopy((setDir) => editJson(join(setDir, 'case.json'), (d) => { d.vendors[0].name = 'テスト通信'; }));
   includes(vendor, '使えない業者名');
 });

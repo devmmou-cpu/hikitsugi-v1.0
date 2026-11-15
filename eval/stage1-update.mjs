@@ -21,7 +21,8 @@ import { clientOf } from './lib/adapters/live.mjs';
 import { driveUpdate } from './update-cost.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SAMPLE = join(ROOT, 'samples/okojo');
+// 更新の通しの起点。11/6 の録画の通しの manual.json（前の版の形）。公開のサンプル（samples/okojo/）を作り直しても、通しの条件を変えないため、固定データに置く（11/15）
+const START_BUNDLE = join(ROOT, 'test/fixtures/okojo-manual-1106.json');
 const UPDATER = '佐藤';
 /** 架空のアカウント名と PC 名。実際の PC の名前を結果に残さない。 */
 export const FICTIONAL_IDENTITY = { account: 'user-s1', host: 'OKJ-PC11' };
@@ -49,7 +50,7 @@ const writeJson = (path, value) => writeFileSync(path, JSON.stringify(value, nul
 /** サンプルをコピーし、更新を始める。返す tool は作業フォルダでプラグインのコマンドを動かす。 */
 function startFromSample(base) {
   mkdirSync(base, { recursive: true });
-  cpSync(join(SAMPLE, 'manual.json'), join(base, 'manual.json'));
+  cpSync(START_BUNDLE, join(base, 'manual.json'));
   const work = join(base, 'hikitsugi-work');
   const tool = (command, args = [], stdin = '') => run(command, args, { work, stdin });
   const started = tool('update-start', [UPDATER]);
@@ -136,7 +137,7 @@ export function apiFreeChecks(dir) {
   results.push((() => {
     const base = join(dir, 'round');
     mkdirSync(base, { recursive: true });
-    writeJson(join(base, 'manual.json'), { ...readJson(join(SAMPLE, 'manual.json')), round: '../../x' });
+    writeJson(join(base, 'manual.json'), { ...readJson(START_BUNDLE), round: '../../x' });
     const result = stops(() => run('update-start', [UPDATER], { work: join(base, 'hikitsugi-work'), stdin: '' }), /回の番号が正しくありません/);
     return { name: 'round', label: '回の番号がおかしい manual.json からは更新を始められない', ...result };
   })());
@@ -215,7 +216,7 @@ export function judge({ base, work, steps, before, identity }) {
   const routineId = steps.find((step) => step.name === 'routine')?.target;
   const routine = manual.routines.find((r) => r.id === routineId);
   const plain = html.replace(/<[^>]+>/g, '');
-  row('場面', '6. 決まった作業を 1 件足し、「決まった作業」に出る。ほかの作業は変わらない', routine && routine.frequency === 'monthly' && plain.includes(text.get(routine.title)) && JSON.stringify(manual.routines.filter((r) => r.id !== routineId)) === JSON.stringify(readJson(join(SAMPLE, 'manual.json')).manual.routines.filter((r) => r.id !== routineId)),
+  row('場面', '6. 決まった作業を 1 件足し、「決まった作業」に出る。ほかの作業は変わらない', routine && routine.frequency === 'monthly' && plain.includes(text.get(routine.title)) && JSON.stringify(manual.routines.filter((r) => r.id !== routineId)) === JSON.stringify(readJson(START_BUNDLE).manual.routines.filter((r) => r.id !== routineId)),
     routine ? `${routine.id}「${text.get(routine.title)}」（${routine.frequency}）` : '決まった作業が足されていません');
   // 担当を引き継ぐ（11/15）
   const handover = (manual.updates ?? []).filter((u) => u.kind === 'handover').at(-1);
@@ -255,7 +256,7 @@ export function judge({ base, work, steps, before, identity }) {
       `PC 用 ${pcShown ? '出た' : '出ていない'}、スマホ用 ${phoneShown ? '連絡先と症状ページが出た' : '出ていない'}（機器はスマホ用の束にもともと出さない）、manual.json ${inBundle ? '出た' : '出ていない'}`].join('。'));
   // 合格の条件 4：更新の記録
   // この通しで足した記録：連絡先、症状、機器、決まった作業、社内の相談先の追加、引き継ぎの直し（1 件以上）、引き継ぎ
-  const added = manual.updates.slice(readJson(join(SAMPLE, 'manual.json')).manual.updates?.length ?? 0);
+  const added = manual.updates.slice(readJson(START_BUNDLE).manual.updates?.length ?? 0);
   const kindList = added.map((u) => u.kind);
   const kinds = kindList.join(',');
   const head = ['add_contact', 'add', 'add_device', 'add_routine', 'add_contact'];
@@ -298,7 +299,7 @@ async function main() {
   if (values.judge) {
     const summary = readJson(join(values.judge, 'summary.json'));
     const live = { base: join(values.judge, 'live'), work: join(values.judge, 'live/hikitsugi-work') };
-    const before = { round: readJson(join(SAMPLE, 'manual.json')).round };
+    const before = { round: readJson(START_BUNDLE).round };
     const gates = judge({ ...live, steps: summary.steps, before, identity: summary.identity });
     writeJson(join(values.judge, 'summary.json'), { ...summary, gates_before_rejudge: summary.gates_before_rejudge ?? summary.gates, gates, rejudged_at: new Date().toISOString() });
     for (const gate of gates) console.log(`${gate.passed ? '合格' : '不合格'}　${gate.label}：${gate.detail}`);

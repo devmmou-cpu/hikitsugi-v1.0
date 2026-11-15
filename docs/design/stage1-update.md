@@ -191,7 +191,7 @@ node --env-file=.env eval/stage1-update.mjs          # API を使う通し（上
 node eval/stage1-update.mjs --checks-only            # API を使わない検査だけ
 node eval/stage1-update.mjs --judge <結果のフォルダ>  # 保存した結果から合否の表だけを作り直す
 ```
-- 入力は `samples/okojo/manual.json` を結果のフォルダにコピーしたもの。更新する人の答えは、下の「実物で確かめる手順」の 2〜4 の文を台本で渡す
+- 入力は `test/fixtures/okojo-manual-1106.json`（11/15 まで `samples/okojo/manual.json` だった、11/6 の録画の通しの出力）を結果のフォルダにコピーしたもの。更新する人の答えは、下の「実物で確かめる手順」の 2〜4 の文を台本で渡す
 - Writer、Editor、Verifier、言い方の担当は、本番と同じ指示文とモデルで API から呼ぶ（`eval/update-cost.mjs` の `driveUpdate`）。更新する人の確認は `review-show` の表示を残してから「このままでよい」を自動で選び、「自動承認」と結果に残す
 - アカウント名と PC 名は、架空の値（`user-s1`、`OKJ-PC11`）を環境変数で渡す
 - API を使わない検査：`0120-000-000` で止まらずに確認を求められる、相手が田中さんだと止まる、番号でない番号、パスワードの本体（連絡先と機器）、回の番号

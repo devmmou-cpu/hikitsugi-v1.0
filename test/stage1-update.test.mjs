@@ -19,6 +19,8 @@ import { PHONE_DIR } from '../plugin/renderer/phone.mjs';
 import { nextStep, run } from '../plugin/scripts/hikitsugi.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
+// 前の版の形の manual.json（11/6 の録画の通しの出力）。前の版の説明書を更新できることを確かめる固定データ。公開のサンプルとは別に置く（11/15）
+const OLD_BUNDLE = join(ROOT, 'test/fixtures/okojo-manual-1106.json');
 const input = loadInput(join(ROOT, 'eval/sets/okojo'));
 const sources = { survey: input.survey, transcript: input.transcript };
 const fixture = () => JSON.parse(readFileSync(join(ROOT, 'test/fixtures/manual-t1.json'), 'utf8'));
@@ -185,10 +187,12 @@ test('アカウント名の欄がない前の版の記録とは比べない。�
   });
 });
 
-test('サンプルの更新の記録には、OS から読んだアカウント名と PC 名を入れない（作り直すときは環境変数で架空の値を渡す）', () => {
-  const bundle = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8'));
-  for (const update of bundle.manual.updates ?? []) {
-    if (update.account || update.host) assert.equal(update.identity_source, 'env', `${update.date} の記録`);
+test('サンプルの作成と更新の記録には、OS から読んだアカウント名と PC 名を入れない（作り直すときは環境変数で架空の値を渡す）', () => {
+  for (const path of ['samples/okojo/manual.json', 'test/fixtures/okojo-manual-1106.json']) {
+    const bundle = JSON.parse(readFileSync(join(ROOT, path), 'utf8'));
+    for (const record of [bundle.manual.review, ...(bundle.manual.updates ?? [])].filter(Boolean)) {
+      if (record.account || record.host) assert.equal(record.identity_source, 'env', `${path} の ${record.date ?? record.confirmed_on} の記録`);
+    }
   }
 });
 
@@ -545,7 +549,7 @@ test('最初に作るとき：共通部分の Writer の形は credential_none �
   assert.deepEqual(credentialNoneProblems([{ id: 'D1', credential_location: null, credential_none: 'STM-001' }], statements, { transcript }), []);
   assert.match(credentialNoneProblems([{ id: 'D1', credential_location: null, credential_none: 'STM-002' }], statements, { transcript }).join(), /答えで「ない」と言われたときだけ/);
   assert.deepEqual(credentialNoneProblems([{ id: 'D1', credential_location: null }], statements, { transcript }), [], '欄のない前の版の機器は問題にしない');
-  const old = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8')).manual;
+  const old = JSON.parse(readFileSync(OLD_BUNDLE, 'utf8')).manual;
   assert.ok(old.devices.every((device) => !('credential_none' in device)));
   assert.deepEqual(validate(MANUAL_SCHEMA, old), []);
 });
@@ -622,7 +626,7 @@ test('合格の条件：連絡先を足し、その連絡先を ③ にした症
 test('manual.json から作り直した説明書でも、足す更新を作り直しまで通せる。「分からない」の回答を根拠にした前の版の文で止まらない', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hikitsugi-stage1-bundle-'));
   try {
-    const bundle = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8'));
+    const bundle = JSON.parse(readFileSync(OLD_BUNDLE, 'utf8'));
     writeFileSync(join(dir, 'manual.json'), JSON.stringify(bundle));
     const work = join(dir, 'hikitsugi-work');
     const tool = {
@@ -673,7 +677,7 @@ test('manual.json から作り直した説明書でも、足す更新を作り�
 test('manual.json から作り直すとき、根拠が「分からない」の回答だけになる文は、番号を出して前の版のまま残し、作り直しまで通す', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hikitsugi-stage1-unknown-only-'));
   try {
-    const bundle = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8'));
+    const bundle = JSON.parse(readFileSync(OLD_BUNDLE, 'utf8'));
     const target = bundle.manual.statements.find((statement) => statement.id === 'STM-049');
     target.evidence = ['INT-018'];
     writeFileSync(join(dir, 'manual.json'), JSON.stringify(bundle));
@@ -704,7 +708,7 @@ test('manual.json から作り直すとき、根拠が「分からない」の�
 test('manual.json に「まだ分かっていないこと」の記録がないのに、記録にない根拠を引く文があれば、作業フォルダを作らずに止める', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hikitsugi-stage1-no-unknowns-'));
   try {
-    const bundle = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8'));
+    const bundle = JSON.parse(readFileSync(OLD_BUNDLE, 'utf8'));
     writeFileSync(join(dir, 'manual.json'), JSON.stringify({ ...bundle, unknowns: [] }));
     const work = join(dir, 'hikitsugi-work');
     assert.throws(() => run('update-start', ['佐藤'], { work }), /聞き取りの記録にない根拠があります：INT-018。manual.json に「まだ分かっていないこと」の記録がない/);
@@ -717,7 +721,7 @@ test('manual.json に「まだ分かっていないこと」の記録がない�
 test('round の検査：回の番号がおかしい manual.json からは更新を始められず、足す更新の取り消しでも作業フォルダの外を消さない', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hikitsugi-stage1-round-'));
   try {
-    const bundle = JSON.parse(readFileSync(join(ROOT, 'samples/okojo/manual.json'), 'utf8'));
+    const bundle = JSON.parse(readFileSync(OLD_BUNDLE, 'utf8'));
     writeFileSync(join(dir, 'manual.json'), JSON.stringify({ ...bundle, round: '../../x' }));
     const work = join(dir, 'hikitsugi-work');
     assert.throws(() => run('update-start', ['佐藤'], { work, stdin: '' }), /回の番号が正しくありません/);

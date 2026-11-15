@@ -1,0 +1,16 @@
+{
+  "name": "hikitsugi",
+  "owner": { "name": "Okojyo-Soft" },
+  "metadata": {
+    "description": "兼任の情シス担当者が退職するときに、IT 未経験の後任が使える取扱説明書を作る Claude Code プラグイン"
+  },
+  "plugins": [
+    {
+      "name": "hikitsugi",
+      "source": "./plugin",
+      "description": "兼任の情シス担当者が退職するときに、聞かれたことに答えるだけで、IT 未経験の後任が使える取扱説明書を作ります",
+      "author": { "name": "Okojyo-Soft" },
+      "license": "MIT"
+    }
+  ]
+}
