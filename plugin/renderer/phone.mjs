@@ -18,7 +18,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fileSize, oversizeMessage, PHONE_FILE_LIMIT, writeWithinLimit } from '../lib/limits.mjs';
 import { contactProblems, pageProblems } from '../lib/page-check.mjs';
-import { firstStepFigures } from '../lib/figures.mjs';
+import { pageFigures } from '../lib/figures.mjs';
 import { pageScopeNotes } from '../lib/procedures.mjs';
 import { missingNote } from '../lib/page-quality.mjs';
 import { notConsultedLabels } from '../lib/common-symptoms.mjs';
@@ -170,7 +170,7 @@ function symptomHtml(ctx, page, fileTitle) {
   const scopeNote = (id) => (scope.has(id) ? `<p class="step-note">${esc(scope.get(id))}</p>` : '');
   const list = (ids) => ids.map((id) => {
     const [body, note] = stepParts(ctx.raw(id));
-    return `<li>${actionHtml(body, ctx.words)}${note ? `<p class="step-note">${actionHtml(note, ctx.words)}</p>` : ''}${scopeNote(id)}</li>`;
+    return `<li>${actionHtml(body, ctx.words)}${note ? `<p class="step-note">${actionHtml(note, ctx.words)}</p>` : ''}${figures.get(id) ?? ''}${scopeNote(id)}</li>`;
   }).join('\n');
 
   // 番号は読む順に振るので、上から順に組み立てる
@@ -180,7 +180,7 @@ function symptomHtml(ctx, page, fileTitle) {
     return `<section class="part">\n<h2>${number()} ${heading}</h2>\n${contactHtml(ctx, contact, internal ? '相談するときの言い方' : '業者に伝える文面', page.fallback.message)}\n</section>`;
   };
   const leading = contactLeads ? contactPart() : '';
-  const figures = firstStepFigures(page, ctx.manual);
+  const figures = pageFigures(page, ctx.manual);
   const first = hasFirst
     ? `<section class="part first">\n<h2>${number()} まずこれだけ</h2>\n${page.first_lead ? `<p class="note">${esc(page.first_lead)}</p>\n` : ''}${page.first_steps.map((id) => `<p class="first-body">${actionHtml(ctx.raw(id), ctx.words)}${figures.get(id) ?? ''}</p>${scopeNote(id)}`).join('\n')}\n${goal(page.first_goal)}\n</section>`
     : '';

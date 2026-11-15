@@ -22,11 +22,12 @@ const SECRET_PATTERNS = [
 // 実行した PC のアカウント名と PC 名。更新の記録に残る値が、リポジトリや書き出したファイルに入っていないかを見る。
 // 値はその場で OS から読み、リポジトリにも出力にも書かない。環境変数の架空の値（HIKITSUGI_IDENTITY）は使わない。
 // 短い名前とよくある名前は、ほかの語に当たるので調べない。日本語の名前も、架空の人物名と区別できないので調べない
-const COMMON_NAMES = new Set(['user', 'users', 'admin', 'administrator', 'root', 'owner', 'guest', 'test', 'default', 'home', 'local', 'localhost', 'desktop', 'laptop', 'public']);
+const COMMON_NAMES = new Set(['user', 'users', 'admin', 'administrator', 'root', 'owner', 'guest', 'test', 'default', 'home', 'local', 'localhost', 'desktop', 'laptop', 'public', 'workgroup', 'azuread']);
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** 調べる語の一覧。label は表示用の種類の名前で、値は出さない。skipped は調べなかった語の数。 */
-export function identityWords({ account, host } = { account: (() => { try { return userInfo().username; } catch { return ''; } })(), host: (() => { try { return hostname(); } catch { return ''; } })() }) {
+// ドメイン名は Windows の環境変数 USERDOMAIN（ほかの OS ではない）。WORKGROUP、AzureAD のようなよくある値は調べない
+export function identityWords({ account, host, domain } = { account: (() => { try { return userInfo().username; } catch { return ''; } })(), host: (() => { try { return hostname(); } catch { return ''; } })(), domain: process.platform === 'win32' ? process.env.USERDOMAIN ?? '' : '' }) {
   const words = [];
   let skipped = 0;
   const add = (label, value) => {
@@ -36,6 +37,7 @@ export function identityWords({ account, host } = { account: (() => { try { retu
     else if (!words.some((entry) => entry.word.toLowerCase() === word.toLowerCase())) words.push({ label, word, pattern: new RegExp(`(?<![A-Za-z0-9])${escapeRegExp(word)}(?![A-Za-z0-9])`, 'i') });
   };
   add('PC のアカウント名', account);
+  add('ドメイン名', domain);
   // PC 名は、そのままの形と、最初の「.」より前（.local やドメインを外した形）の両方を調べる
   add('PC 名', host);
   const short = host?.split('.')[0];

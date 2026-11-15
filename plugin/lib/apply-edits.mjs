@@ -4,6 +4,7 @@
 import { GUARANTEE, isActionText } from './page-check.mjs';
 import { plainTextProblem } from './plain-check.mjs';
 import { directionOf } from './procedures.mjs';
+import { namesOf } from './retiree-check.mjs';
 import { hasCredential } from './transcript.mjs';
 
 const PROTECTED = /[0-9０-９]+(?:[-:：.,／/年月日時分台名回週][0-9０-９]*)*|[A-Za-z][A-Za-z0-9_\\-]*(?:[.\\][A-Za-z0-9_\\-]+)*/gu;
@@ -55,8 +56,8 @@ export const droppedDevices = (before, after, names) => names.filter((name) => c
  * @returns { manual, changes } changes は事実が変わった文章の一覧
  */
 export function applyEdits(manual, edits, { revert = true, retiree, sources } = {}) {
-  const retireeName = retiree?.trim().replace(/(さん|様|氏)$/, '').split(/\s+/)[0];
-  const namesRetiree = (text) => Boolean(retireeName) && text.includes(retireeName);
+  const retireeNames = namesOf(retiree).map((person) => person.trim().replace(/(さん|様|氏)$/, '').split(/\s+/)[0]);
+  const namesRetiree = (text) => retireeNames.some((name) => text.includes(name));
   const known = new Map(manual.statements.map((statement) => [statement.id, statement]));
   const names = manual.contacts.map((contact) => contact.name);
   const devices = deviceNames(manual, sources);

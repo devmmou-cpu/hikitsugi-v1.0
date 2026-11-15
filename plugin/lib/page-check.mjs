@@ -2,6 +2,7 @@
 // /hikitsugi:start と評価の両方で使う。
 
 import { retireeContactProblems } from './retiree-check.mjs';
+import { namesOf } from './retiree-check.mjs';
 
 const FIRST_STEPS_MAX = 3;
 const ROLE_LENGTH_MAX = 15;
@@ -80,9 +81,10 @@ export function parseInfoRow(text) {
 /** 文章そのものの問題。retiree があれば、本人の名前を後任向けの文章に書いていないかも確かめる。 */
 export function statementProblems(statements, retiree) {
   const problems = [];
-  const name = retiree?.trim().replace(/(さん|様|氏)$/, '').split(/\s+/)[0];
+  // 退職した人（最初の前任者と、引き継いで去った人）の名字
+  const names = namesOf(retiree).map((person) => person.trim().replace(/(さん|様|氏)$/, '').split(/\s+/)[0]);
   for (const { id, text, library } of statements) {
-    if (name && !library && text.includes(name)) problems.push(`${id}: 退職する担当者の名前を、後任向けの文章に書かないでください。本人にしかできない作業は before_leaving に入れてください`);
+    if (!library && names.some((name) => text.includes(name))) problems.push(`${id}: 退職する担当者の名前を、後任向けの文章に書かないでください。本人にしかできない作業は before_leaving に入れてください`);
     if (!library && !text.trim()) problems.push(`${id}: 文章が空です`);
     if (!library && /聞き取り|調査データ/.test(text)) problems.push(`${id}: 作り方の言葉（聞き取り、調査データ）を書かないでください`);
   }

@@ -10,6 +10,7 @@ import { parseArgs } from 'node:util';
 import { buildRevision, carryForward, markReviewed, mergeVerification, prepareForRender, summarizeVerification, UnapprovedPartsError, verificationScope } from '../plugin/lib/handover.mjs';
 import { applyRetireeCheck } from '../plugin/lib/retiree-check.mjs';
 import { withSearchIndex } from '../plugin/lib/search-index.mjs';
+import { IDENTITY_ENV, machineIdentity } from '../plugin/lib/identity.mjs';
 import { validate } from '../plugin/lib/validate.mjs';
 import { renderManual } from '../plugin/renderer/render.mjs';
 import { withoutFlaggedPlace, withReplies, withWindows10Note } from '../plugin/lib/reply.mjs';
@@ -21,6 +22,8 @@ import { UsageError } from './lib/adapters/errors.mjs';
 import { runInterviewLive } from './lib/interview-loop.mjs';
 import { loadCommonFacts, runCommonSymptomsLive } from './lib/common-stage.mjs';
 import { loadPageFacts, runAfterLeavingLive, runPageGapsLive } from './lib/page-quality-stage.mjs';
+import { runFigurePlannerLive } from './lib/figure-stage.mjs';
+import { loadOpenFacts, runOpenItems } from './lib/open-stage.mjs';
 import { PAGE_GAP } from '../plugin/lib/page-quality.mjs';
 import { AFTER_LEAVING_GAP } from '../plugin/lib/after-leaving.mjs';
 import { commonSymptomsOf, COMMON_GAP } from '../plugin/lib/common-symptoms.mjs';
@@ -61,6 +64,8 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
   const commonFacts = loadCommonFacts(setDir);
   // 手順の抜けの補足の事実（ページの質）。調整用の会社にだけある。手順の抜けの質問にだけ渡す
   const pageFacts = loadPageFacts(setDir);
+  // 自由に足す段の補足の事実。調整用の会社にだけある
+  const openFacts = loadOpenFacts(setDir);
   mkdirSync(dir, { recursive: true });
   const api = await clientOf(client);
 
@@ -115,7 +120,10 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
     const commonState = commonRun.common;
     // 退職後に聞く道。20 問の中に答えがあれば聞かない。書き始める前に 1 問だけ
     const leaving = await once('after-leaving', null, () => runAfterLeavingLive({ transcript: commonRun.transcript, hidden, commonFacts, client: api, record }));
-    let transcript = schemaCheck('transcript', leaving.transcript);
+    // 枠の外を自由に足す段（任意。決まった部分とは別に数える）
+    const opened = await once('open-items', null, () => runOpenItems({ transcript: leaving.transcript, openFacts }));
+    summary.stages.open_items = { supplement: Boolean(openFacts), items: opened.open.items.map(({ name, kind, entry, status }) => ({ name, kind, ...(entry ? { entry, status } : {}) })), written: opened.items.map((item) => item.entry), summary: opened.summary };
+    let transcript = schemaCheck('transcript', opened.transcript);
     summary.stages.after_leaving = { asked: leaving.asked, ...(leaving.choice ? { choice: leaving.choice } : {}), sources: leaving.sources };
     summary.stages.common_symptoms = {
       supplement: Boolean(commonFacts),
@@ -143,7 +151,7 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
         set: (name, value) => save(`writer-${round}-${name}`, value),
       };
       const written = await once(`manual-${round}-writer`, 'manual', () =>
-        runWriterLive({ survey, transcript, companyName: info.name, retiree: RETIREE, revision, client: api, record, store: pieces, commonSymptoms: commonState, onLeaks: (leaks) => { summary.leaks.push({ round, ...leaks }); }, onSymptoms: (symptoms) => { summary.symptoms.push({ round, ...symptoms }); } }),
+        runWriterLive({ survey, transcript, companyName: info.name, retiree: RETIREE, revision, client: api, record, store: pieces, commonSymptoms: commonState, openItems: opened.items, onLeaks: (leaks) => { summary.leaks.push({ round, ...leaks }); }, onSymptoms: (symptoms) => { summary.symptoms.push({ round, ...symptoms }); } }),
       );
       const edited = await once(`manual-${round}-editor`, null, () => {
         // 差し戻しでは合格済みの用語の説明を引き継ぎ、変わった文章だけを直す
@@ -189,7 +197,11 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
         // 模擬評価。実際の /hikitsugi:start では、前任者がページごとに確認する
         const phrases = await once('search-index', null, () => runPhraseWriterLive({ manual, retiree: RETIREE, client: api, record }));
         const common = commonSymptomsOf(commonState);
-        const reviewed = { ...withSearchIndex(markReviewed(manual, RETIREE, survey.as_of), phrases), ...(common ? { common_symptoms: common } : {}) };
+        // 手順の絵の並べ方（Figure Planner）。プラグインと同じ検査を通ったものだけを入れる
+        const planned = await once('figures', null, () => runFigurePlannerLive({ manual, survey, transcript, client: api, record }));
+        summary.stages.figures = { candidates: planned.candidates, kept: planned.figures.length, dropped: planned.dropped };
+        // 作成の記録の PC は、架空の値（HIKITSUGI_IDENTITY）だけ。評価の道具では必須（main で確かめる）
+        const reviewed = { ...withSearchIndex(markReviewed(manual, RETIREE, survey.as_of, machineIdentity()), phrases), ...(common ? { common_symptoms: common } : {}), figures: planned.figures, ...(opened.summary.out_of_scope.length || opened.summary.not_asked.length ? { open_items: opened.summary } : {}) };
         summary.search_phrases = reviewed.search_index.reduce((sum, entry) => sum + entry.phrases.length, 0);
         save('manual-final', reviewed);
         summary.review = { mode: '模擬（全ページ このままでよい）', pages: reviewed.symptom_pages.length };
@@ -198,6 +210,7 @@ export async function runPipeline({ set, setDir, dir, client, final = false }) {
           common: transcript.entries.filter((entry) => entry.gap === COMMON_GAP).length,
           after_leaving: transcript.entries.filter((entry) => entry.gap === AFTER_LEAVING_GAP).length,
           page_gaps: transcript.entries.filter((entry) => entry.gap === PAGE_GAP).length,
+          open_items: transcript.entries.filter((entry) => entry.gap === 'GAP-903').length,
         };
         save('transcript-final', transcript);
         summary.before_leaving = reviewed.before_leaving?.length ?? 0;
@@ -232,6 +245,8 @@ async function main() {
     options: { set: { type: 'string' }, resume: { type: 'string' }, final: { type: 'boolean' }, 'results-dir': { type: 'string' } },
   });
   if (!values.set) throw new UsageError('使い方：node --env-file=.env eval/pipeline.mjs --set <会社> [--resume <フォルダ>] [--final]');
+  // 作成の記録に、実行した PC の実際のアカウント名と PC 名を残さない。評価の道具では、架空の値を必ず渡す
+  if (!process.env[IDENTITY_ENV]) throw new UsageError(`評価の通しには、架空のアカウント名と PC 名を ${IDENTITY_ENV} で渡してください（例：${IDENTITY_ENV}='{"account":"user-e1","host":"OKJ-PC21"}'）`);
   const setDir = join(ROOT, 'eval/sets', values.set);
   if (!existsSync(setDir)) throw new UsageError(`評価セットがありません: ${values.set}`);
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');

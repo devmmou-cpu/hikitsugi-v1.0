@@ -51,22 +51,32 @@ test('未承認の図は画面に出さない', () => {
   assert.equal(firstStepFigures(page, manual, { figures: drafts }).size, 2);
 });
 
-test('PC 用では、共有フォルダの ① の3手順にだけ図が出る', () => {
+// 承認済みの手描きの図（3 枚）。型から作る絵（キーの絵など）と見分けるため、説明の文で数える
+const handCount = (html) => Object.values(figures).filter((figure) => html.includes(figure.alt)).length;
+const handTotal = (html) => Object.values(figures).reduce((sum, figure) => sum + html.split(`aria-label="${figure.alt}"`).length - 1, 0);
+
+test('PC 用では、手描きの図は共有フォルダの ① の3手順にだけ出る。ほかの手順には型から作った絵が出る', () => {
   const html = renderManual(fixture());
-  assert.equal(figureCount(html), 3);
+  assert.equal(handTotal(html), 3);
   const article = html.match(/<article[^>]*id="symptom-T3"[\s\S]*?<\/article>/)[0];
   const first = article.match(/<section class="first">[\s\S]*?<\/section>/)[0];
   assert.equal(figureCount(first), 3);
   for (const id of ['LIB-001', 'LIB-002', 'LIB-013']) assert.ok(first.includes(figures[id].alt), id);
+  // 同じ LIB-001（Windows キー＋E）を「やること」で使うページには、手描きの図でなく、型から作ったキーの絵が出る
+  const other = html.match(/<article[^>]*id="symptom-T4"[\s\S]*?<\/article>/)[0];
+  assert.equal(handCount(other), 0);
+  assert.match(other, /aria-label="キーボードのWindowsのキーとEのキーを、同時に押す図"/);
 });
 
-test('束でも、共有フォルダの ① の3手順にだけ図が出る。同じ部品を「やること」で使うページには出ない', () => {
+test('束でも、手描きの図は共有フォルダの ① の3手順にだけ出る。同じ部品を「やること」で使うページには型から作った絵が出る', () => {
   const manual = fixture();
   const other = manual.symptom_pages.find((page) => page.id === 'T4');
   const parts = other.steps.map((id) => manual.statements.find((statement) => statement.id === id).library);
   assert.ok(parts.includes('LIB-001') && parts.includes('LIB-002'));
-  const withFigures = renderPhoneBundle(manual).filter((file) => figureCount(file.html) > 0);
-  assert.equal(withFigures.length, 1);
-  assert.equal(figureCount(withFigures[0].html), 3);
-  assert.ok(withFigures[0].name.includes('共有フォルダ'));
+  const files = renderPhoneBundle(manual);
+  const withHand = files.filter((file) => handCount(file.html) > 0);
+  assert.equal(withHand.length, 1);
+  assert.equal(handTotal(withHand[0].html), 3);
+  assert.ok(withHand[0].name.includes('共有フォルダ'));
+  assert.ok(files.some((file) => !file.name.includes('共有フォルダが見えない') && /キーボードのWindowsのキーとEのキーを、同時に押す図/.test(file.html)));
 });

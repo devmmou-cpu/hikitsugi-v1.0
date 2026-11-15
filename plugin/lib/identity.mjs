@@ -19,7 +19,7 @@ export function machineIdentity(env = process.env) {
     } catch {
       throw new Error(`${IDENTITY_ENV} は {"account":"…","host":"…"} の形で指定してください`);
     }
-    return { account: clean(given?.account), host: clean(given?.host), source: 'env' };
+    return { account: clean(given?.account), domain: clean(given?.domain), host: clean(given?.host), source: 'env' };
   }
   const read = (fn) => {
     try {
@@ -28,7 +28,9 @@ export function machineIdentity(env = process.env) {
       return null;
     }
   };
-  return { account: read(() => userInfo().username), host: read(() => hostname()), source: 'os' };
+  // ドメイン名は Windows だけ。Node.js に取り出す関数がないので、環境変数 USERDOMAIN を読む（外のコマンドは動かさない）
+  const domain = process.platform === 'win32' ? clean(env.USERDOMAIN) : null;
+  return { account: read(() => userInfo().username), domain, host: read(() => hostname()), source: 'os' };
 }
 
 const plainName = (name) => name.trim().replace(/\s+/g, ' ').replace(/(さん|様|氏)$/, '');
@@ -42,3 +44,6 @@ export function otherAccountsOf(updates, by, account) {
   const name = plainName(by);
   return [...new Set((updates ?? []).filter((update) => update.account && plainName(update.by) === name && update.account !== account).map((update) => update.account))];
 }
+
+/** 記録に入れる欄。取れなかった値は入れない。 */
+export const identityFields = (identity) => (identity ? { ...(identity.account ? { account: identity.account } : {}), ...(identity.domain ? { domain: identity.domain } : {}), ...(identity.host ? { host: identity.host } : {}), ...(identity.source ? { identity_source: identity.source } : {}) } : {});

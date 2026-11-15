@@ -42,11 +42,16 @@
           "pages": { "type": "array", "items": { "type": "string", "pattern": "^T\\d+$" } },
           "by": { "type": "string", "minLength": 1 },
           "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
-          "kind": { "type": "string", "enum": ["contact", "page", "device", "add", "memo", "add_contact", "add_device"] },
+          "kind": { "type": "string", "enum": ["contact", "page", "device", "add", "memo", "add_contact", "add_device", "routine", "add_routine", "handover"] },
           "summary": { "type": "string", "minLength": 1 },
           "account": { "type": "string", "minLength": 1 },
           "host": { "type": "string", "minLength": 1 },
-          "identity_source": { "type": "string", "enum": ["os", "env"] }
+          "identity_source": { "type": "string", "enum": ["os", "env"] },
+          "domain": { "$comment": "Windows のドメイン名（記録で、本人確認ではない）", "type": "string", "minLength": 1 },
+          "prev": { "$comment": "前の記録の要約値（書き換えに気づくため。防ぐものではない）", "type": ["string", "null"], "pattern": "^[0-9a-f]{16}$" },
+          "content": { "$comment": "この記録の時点の中身の要約値", "type": "string", "pattern": "^[0-9a-f]{16}$" },
+          "from": { "$comment": "担当の引き継ぎで、去る人", "type": "string", "minLength": 1 },
+          "to": { "$comment": "担当の引き継ぎで、新しい担当", "type": "string", "minLength": 1 }
         }
       }
     },
@@ -282,6 +287,10 @@
               "pattern": "^STM-\\d{3}$"
             }
           },
+          "source": {
+            "$comment": "自由に足す段の項目から作ったページは free。承認済みの手順部品を置かず、「自分で直せる」を使わない。絵も付けない",
+            "enum": ["free"]
+          },
           "fallback": {
             "type": [
               "object",
@@ -514,6 +523,11 @@
           "type": "string",
           "minLength": 1
         },
+        "account": { "$comment": "作成の記録：確認した PC のアカウント名（記録で、本人確認ではない）", "type": "string", "minLength": 1 },
+        "domain": { "type": "string", "minLength": 1 },
+        "host": { "type": "string", "minLength": 1 },
+        "identity_source": { "type": "string", "enum": ["os", "env"] },
+        "content": { "$comment": "作成の時点の中身の要約値（記録の鎖の始まり）", "type": "string", "pattern": "^[0-9a-f]{16}$" },
         "updated_by": {
           "$comment": "最新の更新を確認した人。角印に出す",
           "type": "string",
@@ -553,6 +567,48 @@
             }
           }
         }
+      }
+    },
+    "figures": {
+      "$comment": "部品を並べる絵の並べ方（Figure Planner が決め、プログラムが検査したもの）。text は決めたときの手順の文で、文が変われば使わない。キーの絵は文から作るので記録しない",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["step", "text", "items"],
+        "properties": {
+          "step": { "type": "string", "pattern": "^STM-\\d{3}$" },
+          "text": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["part", "label"],
+              "properties": {
+                "part": { "type": "string", "pattern": "^[a-z-]+$" },
+                "label": { "type": "string", "maxLength": 12 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "figure_off": {
+      "$comment": "前任者の確認で「この絵は外す」を選んだ手順。キーの絵も部品の絵も付けない",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^STM-\\d{3}$" }
+    },
+    "open_items": {
+      "$comment": "自由に足す段で挙がったもののうち、載せなかったもの。out_of_scope は IT ではない（対象外）、not_asked はまだ聞いていないもの。はじめにに題名だけを出す",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["out_of_scope", "not_asked"],
+      "properties": {
+        "out_of_scope": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "not_asked": { "type": "array", "items": { "type": "string", "minLength": 1 } }
       }
     },
     "after_leaving": {

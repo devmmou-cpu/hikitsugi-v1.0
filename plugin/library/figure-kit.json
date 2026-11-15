@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "$comment": "手順の絵の型と部品。本人が見本 2（eval/results/20261114T-figure-kit-sample-2/figure-kit-2.png）で承認し、矢印の下に動詞の文字を添える条件を足した（11/15）。文面と同じく、承認なしに形を変えない。線は currentColor、押す場所と向きは var(--accent)、×は var(--danger-fg)",
+  "status": "approved",
+  "reviewed_by": "Okojyo-Soft",
+  "reviewed_on": "2026-11-15",
+  "parts": {
+    "pc": {
+      "name": "PC",
+      "words": [
+        "PC",
+        "パソコン"
+      ],
+      "svg": "<rect x=\"14\" y=\"12\" width=\"72\" height=\"48\" rx=\"6\"/><path d=\"M42 60V70M58 60V70M32 70H68\"/><rect x=\"18\" y=\"76\" width=\"64\" height=\"12\" rx=\"3\"/><path d=\"M26 82H74\" stroke-width=\"1.5\" stroke-dasharray=\"3 3\"/>"
+    },
+    "router": {
+      "name": "ルーター・無線 AP",
+      "words": [
+        "ルーター",
+        "AP",
+        "アクセスポイント"
+      ],
+      "svg": "<rect x=\"12\" y=\"52\" width=\"76\" height=\"30\" rx=\"6\"/><path d=\"M30 52L24 20M70 52L76 20\"/><path d=\"M26 67H32M40 67H46M54 67H60\" stroke-width=\"3\" stroke-linecap=\"round\"/>"
+    },
+    "printer": {
+      "name": "複合機・プリンター",
+      "words": [
+        "複合機",
+        "プリンター",
+        "コピー機"
+      ],
+      "svg": "<rect x=\"28\" y=\"12\" width=\"44\" height=\"22\" rx=\"2\"/><rect x=\"12\" y=\"34\" width=\"76\" height=\"38\" rx=\"6\"/><rect x=\"26\" y=\"62\" width=\"48\" height=\"26\" rx=\"2\"/><path d=\"M34 72H66M34 80H58\" stroke-width=\"1.5\"/><path d=\"M72 44H78\" stroke-width=\"3\" stroke-linecap=\"round\"/>"
+    },
+    "box": {
+      "name": "箱の機器（NAS・外付け・UTM・サーバー）",
+      "words": [
+        "NAS",
+        "UTM",
+        "サーバー",
+        "外付け",
+        "ハードディスク"
+      ],
+      "svg": "<rect x=\"26\" y=\"10\" width=\"48\" height=\"80\" rx=\"6\"/><path d=\"M36 26H64M36 38H64M36 50H64\" stroke-width=\"1.5\"/><rect x=\"36\" y=\"70\" width=\"8\" height=\"8\" rx=\"4\"/><rect x=\"52\" y=\"70\" width=\"12\" height=\"8\" rx=\"2\"/>"
+    },
+    "cable": {
+      "name": "LAN ケーブル",
+      "words": [
+        "ケーブル"
+      ],
+      "svg": "<rect x=\"34\" y=\"12\" width=\"30\" height=\"28\" rx=\"3\"/><path d=\"M40 12V20M46 12V20M52 12V20M58 12V20\" stroke-width=\"1.5\"/><path d=\"M64 18L80 12V30L64 34\" stroke-width=\"2.5\" stroke-linejoin=\"round\"/><path d=\"M49 40V52C49 66 28 64 28 78V92\"/>"
+    },
+    "power": {
+      "name": "電源プラグ・電源アダプター",
+      "words": [
+        "電源プラグ",
+        "電源アダプター",
+        "アダプター",
+        "プラグ",
+        "コンセント"
+      ],
+      "svg": "<rect x=\"24\" y=\"36\" width=\"30\" height=\"28\" rx=\"6\"/><rect x=\"8\" y=\"41\" width=\"16\" height=\"5\" rx=\"1\" fill=\"currentColor\"/><rect x=\"8\" y=\"54\" width=\"16\" height=\"5\" rx=\"1\" fill=\"currentColor\"/><path d=\"M54 50C72 50 70 78 92 78\"/>"
+    },
+    "power-button": {
+      "name": "電源ボタン",
+      "words": [
+        "電源ボタン"
+      ],
+      "svg": "<rect x=\"18\" y=\"18\" width=\"64\" height=\"64\" rx=\"32\"/><path d=\"M50 30V50\" stroke-width=\"3\" stroke-linecap=\"round\"/><path d=\"M39 38A16 16 0 1 0 61 38\" stroke-width=\"3\" stroke-linecap=\"round\"/>"
+    },
+    "lamp": {
+      "name": "ランプ",
+      "words": [
+        "ランプ"
+      ],
+      "svg": "<rect x=\"34\" y=\"34\" width=\"32\" height=\"32\" rx=\"16\" fill=\"currentColor\"/><path d=\"M50 14V24M50 76V86M14 50H24M76 50H86M25 25L32 32M68 68L75 75M75 25L68 32M32 68L25 75\" stroke-width=\"2\" stroke-linecap=\"round\"/>"
+    }
+  },
+  "lamp_states": {
+    "on": "<rect x=\"34\" y=\"34\" width=\"32\" height=\"32\" rx=\"16\" fill=\"currentColor\"/><path d=\"M50 14V24M50 76V86M14 50H24M76 50H86M25 25L32 32M68 68L75 75M75 25L68 32M32 68L25 75\" stroke-width=\"2\" stroke-linecap=\"round\"/>",
+    "blink": "<rect x=\"34\" y=\"34\" width=\"32\" height=\"32\" rx=\"16\" stroke-dasharray=\"5 4\" stroke-width=\"3\"/><path d=\"M50 16V24M50 76V84M16 50H24M76 50H84\" stroke-width=\"2\" stroke-dasharray=\"2 3\" stroke-linecap=\"round\"/>",
+    "off": "<rect x=\"34\" y=\"34\" width=\"32\" height=\"32\" rx=\"16\"/>"
+  },
+  "arrows": {
+    "right": "<path d=\"M12 50H82M66 34L84 50L66 66\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"stroke:var(--accent)\"/>",
+    "left": "<path d=\"M88 50H18M34 34L16 50L34 66\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"stroke:var(--accent)\"/>"
+  },
+  "cross": "<path d=\"M28 28L72 72M72 28L28 72\" stroke-width=\"4\" style=\"stroke:var(--danger-fg)\" stroke-linecap=\"round\"/>",
+  "verbs": {
+    "$comment": "向きはこの一覧で決める。エージェントに選ばせない。両方がある文と、一覧にない動詞の文は矢印を付けない。label は矢印の下に添える文字（手順の文の動詞の言い切りの形）",
+    "toward": [
+      [
+        "差し直して",
+        "差し直す"
+      ],
+      [
+        "挿し直して",
+        "挿し直す"
+      ],
+      [
+        "差し込んで",
+        "差し込む"
+      ],
+      [
+        "差して",
+        "差す"
+      ],
+      [
+        "挿して",
+        "挿す"
+      ],
+      [
+        "つないで",
+        "つなぐ"
+      ]
+    ],
+    "away": [
+      [
+        "抜いて",
+        "抜く"
+      ],
+      [
+        "外して",
+        "外す"
+      ]
+    ]
+  }
+}

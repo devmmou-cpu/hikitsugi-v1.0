@@ -113,17 +113,18 @@ test('アカウント名と PC 名：OS から読み、環境変数があれば�
   // 値は表示しない。OS の値と同じであることだけを確かめる
   assert.ok(fromOs.account === userInfo().username, 'アカウント名は OS の値');
   assert.ok(fromOs.host === hostname(), 'PC 名は OS の値');
-  assert.deepEqual(machineIdentity({ [IDENTITY_ENV]: JSON.stringify({ account: ' user-b ', host: 'OKJ-PC02' }) }), { account: 'user-b', host: 'OKJ-PC02', source: 'env' });
-  assert.deepEqual(machineIdentity({ [IDENTITY_ENV]: JSON.stringify({ account: '' }) }), { account: null, host: null, source: 'env' });
+  assert.deepEqual(machineIdentity({ [IDENTITY_ENV]: JSON.stringify({ account: ' user-b ', host: 'OKJ-PC02' }) }), { account: 'user-b', domain: null, host: 'OKJ-PC02', source: 'env' });
+  assert.deepEqual(machineIdentity({ [IDENTITY_ENV]: JSON.stringify({ account: 'user-b', domain: 'OKJ', host: 'OKJ-PC02' }) }).domain, 'OKJ');
+  assert.deepEqual(machineIdentity({ [IDENTITY_ENV]: JSON.stringify({ account: '' }) }), { account: null, domain: null, host: null, source: 'env' });
   assert.throws(() => machineIdentity({ [IDENTITY_ENV]: 'user-b' }), /の形で指定してください/);
 });
 
-test('更新の記録：名乗った名前、アカウント名、PC 名、出どころを manual.json に残し、PC 用・印刷・スマホ用の画面には出さない', () =>
+test('更新の記録：名乗った名前、アカウント名、PC 名、出どころを manual.json に残し、PC 用と印刷の「更新の記録」に出す。スマホ用には出さない（11/15、段 1 の決定 3 を変えた）', () =>
   withIdentity({ account: 'user-z', host: 'OKJ-ZZ99' }, () =>
     finished((tool) => {
       const { work, hikitsugi, read } = tool;
       const started = hikitsugi('update-start', ['佐藤']);
-      assert.match(started, /記録します：アカウント名 user-z、PC 名 OKJ-ZZ99（環境変数で指定）。説明書の画面には出さず、manual\.json にだけ残します/);
+      assert.match(started, /記録します：アカウント名 user-z、PC 名 OKJ-ZZ99（環境変数で指定）。PC 用と印刷の「更新の記録」に出ます（スマホ用には出しません）。記録で、本人確認ではありません/);
       assert.match(started, /更新の記録はまだありません/);
       changePhone(tool, '03-0000-0199');
       const [update] = read('manual-final.json').updates;
@@ -131,9 +132,15 @@ test('更新の記録：名乗った名前、アカウント名、PC 名、出�
       assert.deepEqual(validate(MANUAL_SCHEMA, read('manual-final.json')), []);
       const bundle = JSON.parse(readFileSync(join(work, 'manual.json'), 'utf8'));
       assert.equal(bundle.manual.updates[0].account, 'user-z', 'manual.json に残る');
-      const html = writtenHtml(work);
-      assert.ok(html.includes('佐藤'), '名乗った名前は更新の記録の表に出る');
-      for (const value of ['user-z', 'OKJ-ZZ99']) assert.ok(!html.includes(value), `${value} は画面に出さない`);
+      const pc = readFileSync(join(work, 'manual.html'), 'utf8');
+      const phone = readdirSync(join(work, PHONE_DIR)).map((name) => readFileSync(join(work, PHONE_DIR, name), 'utf8')).join('\n');
+      assert.ok(pc.includes('佐藤'), '名乗った名前は更新の記録の表に出る');
+      // PC 用（印刷も同じ HTML）には、記録した PC の列に出る。そばに「本人確認ではありません」
+      const log = pc.match(/<table class="update-log">[\s\S]*?<\/table>/)[0];
+      assert.ok(log.includes('user-z ／ OKJ-ZZ99（指定した値）'));
+      assert.ok(pc.includes('アカウント名と PC 名は、その操作をした PC から自動で取った記録です。本人確認ではありません。'));
+      assert.doesNotMatch(pc, /証明/);
+      for (const value of ['user-z', 'OKJ-ZZ99']) assert.ok(!phone.includes(value), `${value} はスマホ用には出さない`);
       assert.match(hikitsugi('history'), /^\d{4}-\d{2}-\d{2} 連絡先の変更 佐藤（アカウント名 user-z、PC 名 OKJ-ZZ99）対象 VEN-02$/);
     })));
 
@@ -164,7 +171,11 @@ test('アカウント名の欄がない前の版の記録とは比べない。�
   assert.deepEqual(otherAccountsOf([...old, { ...old[0], account: 'user-b' }], '佐藤', null), []);
   // 前の版の説明書（欄なし）でも記録の印は付き、形の検査に通る
   const marked = withUpdateMark({ ...fixture(), updates: old }, { target: 'VEN-02', by: '佐藤', date: '2026-11-10', kind: 'contact', identity: { account: null, host: 'OKJ-PC01', source: 'os' } });
-  assert.deepEqual(marked.updates.at(-1), { target: 'VEN-02', pages: ['T1'], by: '佐藤', date: '2026-11-10', kind: 'contact', host: 'OKJ-PC01', identity_source: 'os' });
+  // 記録には、前の記録の要約値と、中身の要約値が付く（前の版の記録に要約値がなくても付ける）
+  const { prev, content, ...record } = marked.updates.at(-1);
+  assert.deepEqual(record, { target: 'VEN-02', pages: ['T1'], by: '佐藤', date: '2026-11-10', kind: 'contact', host: 'OKJ-PC01', identity_source: 'os' });
+  assert.match(prev, /^[0-9a-f]{16}$/);
+  assert.match(content, /^[0-9a-f]{16}$/);
   assert.deepEqual(validate(MANUAL_SCHEMA, marked), []);
   finished(({ hikitsugi, write, read }) => {
     write('manual-final.json', { ...read('manual-final.json'), updates: old });
@@ -584,7 +595,8 @@ test('合格の条件：連絡先を足し、その連絡先を ③ にした症
     const manual = read('manual-final.json');
     const bundle = JSON.parse(readFileSync(join(work, 'manual.json'), 'utf8')).manual;
     const html = readFileSync(join(work, 'manual.html'), 'utf8');
-    const phone = writtenHtml(work);
+    // スマホ用の束だけ（PC 用は含めない）
+    const phone = readdirSync(join(work, PHONE_DIR)).map((name) => readFileSync(join(work, PHONE_DIR, name), 'utf8')).join('\n');
     // 1. ③ の連絡先
     const page = manual.symptom_pages.find((candidate) => manual.statements.find((s) => s.id === candidate.title)?.text === PANEL_TITLE);
     assert.equal(page.fallback.contact, 'VEN-03');
@@ -603,7 +615,8 @@ test('合格の条件：連絡先を足し、その連絡先を ③ にした症
       ['機器の追加', '佐藤', 'user-c', 'OKJ-PC09'],
     ]);
     assert.deepEqual(bundle.updates, manual.updates, 'manual.json にも同じ記録');
-    for (const value of ['user-c', 'OKJ-PC09']) assert.ok(!html.includes(value) && !phone.includes(value), `${value} は画面に出さない`);
+    // PC 用と印刷には出し、スマホ用には出さない（11/15）
+    for (const value of ['user-c', 'OKJ-PC09']) assert.ok(html.includes(value) && !phone.includes(value), `${value} は PC 用にだけ出す`);
   }));
 
 test('manual.json から作り直した説明書でも、足す更新を作り直しまで通せる。「分からない」の回答を根拠にした前の版の文で止まらない', () => {
@@ -742,3 +755,123 @@ test('評価の Writer の呼び出し：連絡先と機器の更新では、そ
   assert.equal(shape('contact'), 'contact,statements');
   assert.equal(shape('device'), 'device,statements');
 });
+
+// ---- 自由な項目と引き継ぎ（11/15）：決まった作業の更新、担当の引き継ぎ、記録の鎖、作成の記録 ----
+import { chainProblems, contentDigest, lastRecordDigest } from '../plugin/lib/records.mjs';
+import { departedNames, takeoverHits } from '../plugin/lib/takeover.mjs';
+
+const ROUTINE_ANSWER = '毎月15日に、NAS の管理画面でディスクの状態を見ています。「正常」と出ていれば終わりです。総務の担当がしています。';
+
+/** 決まった作業を足す更新を、Writer の出力を書いて検査まで進める。changeOther なら、ほかの作業も変える（止まるはず）。 */
+function writeAddedRoutine({ work, hikitsugi, write, read }, { changeOther = false } = {}) {
+  assert.match(hikitsugi('update-add-routine', ['monthly'], ROUTINE_ANSWER), /。R\d+ を書きます$/);
+  const { round } = read('state.json');
+  const id = read('state.json').update.target;
+  assert.deepEqual(nextStep(work), { step: 'writer', round, part: 'common' });
+  hikitsugi('writer-task', [String(round), 'common']);
+  const task = read('writer-task.json');
+  assert.deepEqual(task.revision.update.add_routine, { id, frequency: 'monthly' });
+  const evidence = task.revision.page_fix.evidence;
+  const previous = task.revision.previous;
+  const next = Math.max(...previous.statements.map((s) => Number(s.id.slice(4)))) + 1;
+  const sid = (n) => `STM-${String(n).padStart(3, '0')}`;
+  const added = [statement(sid(next), '毎月15日：NAS のディスクの状態を見る', evidence), statement(sid(next + 1), 'NAS の管理画面で「正常」と出ていれば終わりです。', evidence)];
+  // changeOther：頼まれていない作業をもう 1 件足す（対象のほかの作業を変えるのと同じく止まるはず）
+  const others = changeOther ? [{ id: 'R99', frequency: 'weekly', title: added[0].id, steps: [added[1].id] }] : [];
+  write(`writer-${round}-common.json`, { ...previous, statements: [...previous.statements, ...added], routines: [...previous.routines, { id, frequency: 'monthly', title: added[0].id, steps: [added[1].id] }, ...others] });
+  return { id, check: () => hikitsugi('check-writer', [String(round), 'common']) };
+}
+
+test('決まった作業を足す：間隔はプログラムが決めたとおり、ほかの作業は変えない。確認のあと「決まった作業」に出る', () =>
+  finished((tool) => {
+    const { work, hikitsugi, read } = tool;
+    hikitsugi('update-start', ['佐藤']);
+    assert.throws(() => hikitsugi('update-add-routine', ['daily'], ROUTINE_ANSWER), /weekly\|monthly\|yearly/);
+    const bad = writeAddedRoutine(tool, { changeOther: true });
+    assert.throws(() => bad.check(), /足す決まった作業は 1 件だけです：R99/);
+    hikitsugi('update-cancel');
+    hikitsugi('update-start', ['佐藤']);
+    const { id, check } = writeAddedRoutine(tool);
+    check();
+    const { shown } = passThrough(tool, id);
+    assert.match(shown, new RegExp(`${id}：毎月15日：NAS のディスクの状態を見る（毎月）`));
+    const manual = read('manual-final.json');
+    assert.equal(manual.updates.at(-1).kind, 'add_routine');
+    // 表示では語が折り返し用の印で囲まれるので、印を外して確かめる
+    assert.ok(readFileSync(join(work, 'manual.html'), 'utf8').replace(/<[^>]+>/g, '').includes('毎月15日：NAS のディスクの状態を見る'));
+    assert.match(hikitsugi('update-targets'), new RegExp(`"routines":\\[.*"id":"${id}"`));
+  }));
+
+test('担当の引き継ぎ：去る人が連絡先・相談先に残っていれば完了しない。直して、ほかの文を確かめたら記録し、「今の担当」を出す', () =>
+  finished((tool) => {
+    const { work, hikitsugi, write, read } = tool;
+    // 佐藤さんを社内の相談先と、相談の相手と、経緯の文に入れた説明書
+    const manual = read('manual-final.json');
+    const extra = [statement('STM-950', '社内の IT の相談役', 'INT-001'), statement('STM-951', '困ったときは佐藤さんに相談してください。', 'INT-001'), statement('STM-952', 'この設定は佐藤さんが去年変えたものです。', 'INT-001')];
+    const page = manual.symptom_pages[0];
+    write('manual-final.json', { ...manual, statements: [...manual.statements, ...extra], contacts: [...manual.contacts, { id: 'INH-01', name: '佐藤', phone: '', role: 'STM-950', hours: null, contract_location: null, what_to_tell: 'STM-950' }], symptom_pages: [{ ...page, notes: [...page.notes, 'STM-951', 'STM-952'] }, ...manual.symptom_pages.slice(1)] });
+    hikitsugi('update-start', ['社長']);
+    const started = hikitsugi('takeover-start', ['佐藤', '→', '社長']);
+    assert.match(started, /直すまで完了しないもの：2 件\n- INH-01（連絡先）：佐藤\n- STM-951（連絡・相談の相手）：困ったときは佐藤さんに相談してください。/);
+    assert.match(started, /1 件ずつ確かめるもの（名前が出てくるほかの文）：1 件\n- STM-952/);
+    assert.throws(() => hikitsugi('takeover-finish'), /まだ完了できません/);
+    // 直したことにする（ふつうの更新で直した結果の形）
+    const fixed = read('manual-final.json');
+    write('manual-final.json', { ...fixed, contacts: fixed.contacts.map((c) => (c.id === 'INH-01' ? { ...c, name: '社長' } : c)), statements: fixed.statements.map((s) => (s.id === 'STM-951' ? { ...s, text: '困ったときは社長に相談してください。' } : s)) });
+    assert.throws(() => hikitsugi('takeover-finish'), /1 件ずつ確かめるもの/);
+    assert.throws(() => hikitsugi('takeover-ok', ['STM-001']), /一覧にありません/);
+    hikitsugi('takeover-ok', ['STM-952']);
+    assert.match(hikitsugi('takeover-finish'), /担当の引き継ぎを記録しました（佐藤 さん → 社長 さん）/);
+    const done = read('manual-final.json');
+    const record = done.updates.at(-1);
+    assert.deepEqual([record.kind, record.from, record.to, record.by], ['handover', '佐藤', '社長', '社長']);
+    assert.match(record.prev, /^[0-9a-f]{16}$/);
+    assert.deepEqual(departedNames('田中', done), ['田中', '佐藤']);
+    hikitsugi('render');
+    const pc = readFileSync(join(work, 'manual.html'), 'utf8');
+    assert.match(pc, /今の担当：社長 さん（/);
+    assert.match(pc, /<td class="update-kind">担当の引き継ぎ<\/td><td>社長<\/td><td><\/td><td>佐藤 さん → 社長 さん<\/td>/);
+    // 去った人は、以後の更新でも連絡先にできない（最初の前任者と同じ検査）
+    assert.deepEqual(takeoverHits({ ...done, contacts: [...done.contacts, { id: 'INH-02', name: '佐藤', phone: '', role: 'STM-950' }] }, '佐藤').blocking.map((hit) => hit.id), ['INH-02']);
+  }));
+
+test('記録の鎖：前の記録や中身がプラグインの外で変わっていれば、更新を始めたときに注意を出す（止めない）', () =>
+  finished((tool) => {
+    const { hikitsugi, write, read } = tool;
+    withIdentity({ account: 'user-a', host: 'OKJ-PC01' }, () => {
+      hikitsugi('update-start', ['佐藤']);
+      changePhone(tool, '03-0000-0199');
+      hikitsugi('update-start', ['佐藤']);
+      changePhone(tool, '03-0000-0198');
+    });
+    const manual = read('manual-final.json');
+    assert.deepEqual(chainProblems(manual), []);
+    assert.equal(manual.updates[1].prev, lastRecordDigest({ ...manual, updates: manual.updates.slice(0, 1) }));
+    assert.equal(manual.updates[1].content, contentDigest(manual));
+    // 1 件目の記録を書き換える
+    write('manual-final.json', { ...manual, updates: [{ ...manual.updates[0], by: '鈴木' }, manual.updates[1]] });
+    assert.match(withIdentity({ account: 'user-a', host: 'OKJ-PC01' }, () => hikitsugi('update-start', ['佐藤'])), /注意：記録 3 件目の前の記録が、記録したときと違います.*OneDrive の版履歴/);
+    // 中身を書き換える
+    write('manual-final.json', { ...manual, statements: manual.statements.map((s, i) => (i === 0 ? { ...s, text: `${s.text}（手で直した）` } : s)) });
+    assert.match(withIdentity({ account: 'user-a', host: 'OKJ-PC01' }, () => hikitsugi('update-start', ['佐藤'])), /注意：最後の記録のあと、プラグインの外で中身/);
+  }));
+
+test('作成の記録：前任者が確認を終えたとき、アカウント名・ドメイン名・PC 名を残し、はじめにの 1 行と更新の記録の表に出す（スマホ用には出さない）', () =>
+  withIdentity({ account: 'user-k', domain: 'OKJ', host: 'OKJ-PC07' }, () =>
+    finished((tool) => {
+      const { work, hikitsugi, write, read } = tool;
+      const manual = read('manual-final.json');
+      const { review: _review, ...draft } = manual;
+      write('manual-final.json', draft);
+      write('state.json', { ...read('state.json'), review: { reviewer: '田中', pages: {}, done: false } });
+      hikitsugi('review-ok', ['T1']);
+      const review = read('manual-final.json').review;
+      assert.deepEqual([review.account, review.domain, review.host, review.identity_source], ['user-k', 'OKJ', 'OKJ-PC07', 'env']);
+      assert.match(review.content, /^[0-9a-f]{16}$/);
+      hikitsugi('render');
+      const pc = readFileSync(join(work, 'manual.html'), 'utf8');
+      assert.match(pc, /作成の記録：.*田中 確認（OKJ\\user-k ／ OKJ-PC07（指定した値））。アカウント名と PC 名は、その操作をした PC から自動で取った記録です。本人確認ではありません。/);
+      const phone = readdirSync(join(work, PHONE_DIR)).map((name) => readFileSync(join(work, PHONE_DIR, name), 'utf8')).join('\n');
+      for (const value of ['user-k', 'OKJ-PC07']) assert.ok(!phone.includes(value));
+      assert.doesNotMatch(pc + phone, /証明/);
+    })));

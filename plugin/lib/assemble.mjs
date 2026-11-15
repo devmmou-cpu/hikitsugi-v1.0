@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { contactProblems, pageProblems, pageStatementIds, statementProblems, reassuranceProblems } from './page-check.mjs';
 import { afterLeavingProblems } from './after-leaving.mjs';
+import { freePageProblems } from './open-items.mjs';
 import { composeStatements, contactEvidenceProblems, directionProblems, evidenceReader, loadLibrary, pageDetailProblems, stepSourceProblems } from './procedures.mjs';
 import { retireeContactProblems } from './retiree-check.mjs';
 import { hasCredential } from './transcript.mjs';
@@ -36,7 +37,8 @@ export const commonSchema = () => {
     page_plan: {
       $comment: '作る手順ページの一覧。symptom はページを書く担当へ渡す、症状の短い説明',
       type: 'array',
-      items: objectOf({ id: { type: 'string', pattern: '^T\\d+$' }, category: CATEGORY, symptom: { type: 'string', minLength: 1 } }),
+      // free と item は、自由に足した項目から作るページだけ（item はその項目の答えの INT）。前の版の出力を読めるよう任意
+      items: { ...objectOf({ id: { type: 'string', pattern: '^T\\d+$' }, category: CATEGORY, symptom: { type: 'string', minLength: 1 } }), properties: { id: { type: 'string', pattern: '^T\\d+$' }, category: CATEGORY, symptom: { type: 'string', minLength: 1 }, free: { type: 'boolean' }, item: { type: 'string', pattern: '^INT-\\d{3}$' } } },
     },
     statements: WRITER_STATEMENTS,
     contacts,
@@ -228,13 +230,15 @@ export function droppedFromCommon(previous, output) {
 
 /** ページの出力を確かめる。id と category は一覧の値に固定する。連絡先の照合には共通部分を使う。 */
 export function checkPage(output, entry, contacts, sources, { library = loadLibrary(), retiree } = {}) {
-  const page = { ...output.page, id: entry.id, category: entry.category };
+  // 自由に足した項目のページは、出どころをプログラムが付ける（モデルに書かせない）
+  const page = { ...output.page, id: entry.id, category: entry.category, ...(entry.free ? { source: 'free' } : {}) };
   const { statements, problems } = composeStatements(output.statements, library);
   problems.push(
     ...statementProblems(statements, retiree),
     ...pageProblems({ statements, symptom_pages: [page], contacts }),
     ...pageDetailProblems(page, statements, sources, library),
     ...reassuranceProblems(page, statements),
+    ...(entry.free ? freePageProblems(page, statements, new Set([entry.item].filter(Boolean))) : []),
   );
   return { output: { statements, page }, problems };
 }

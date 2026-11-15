@@ -135,7 +135,7 @@ const contactsForPages = (common) => {
  * @param revision { previous_manual, findings }
  * @param store { get(name), set(name, value) }。書き終えた部分を保存して、止まっても続きから再開するため
  */
-export async function runWriterLive({ survey, transcript, companyName, retiree, revision, client, record = () => {}, store = { get: () => undefined, set: () => {} }, onLeaks = () => {}, onSymptoms = () => {}, commonSymptoms = null }) {
+export async function runWriterLive({ survey, transcript, companyName, retiree, revision, client, record = () => {}, store = { get: () => undefined, set: () => {} }, onLeaks = () => {}, onSymptoms = () => {}, commonSymptoms = null, openItems = [] }) {
   const api = await clientOf(client);
   const agent = loadAgent('plugin/agents/writer.md');
   const sources = { survey, transcript };
@@ -202,7 +202,8 @@ export async function runWriterLive({ survey, transcript, companyName, retiree, 
   };
 
   if (!revision) {
-    const common = await once('common', { part: 'common' }, (output) => checkCommon(output, sources, { retiree }));
+    // 自由に足す段で挙がった物は、共通部分に渡す（機器・連絡先・決まった作業と、機器のページの行）
+    const common = await once('common', { part: 'common', ...(openItems.length ? { open_items: openItems } : {}) }, (output) => checkCommon(output, sources, { retiree }));
     const contacts = contactsForPages(common);
     const pages = {};
     await pool(common.page_plan, PAGE_CONCURRENCY, async (entry) => {

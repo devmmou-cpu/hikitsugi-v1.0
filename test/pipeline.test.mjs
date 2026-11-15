@@ -228,6 +228,8 @@ function pipelineClient({ verdicts }) {
     // 退職後の問いと手順の抜けの問いは、偽の田中さんでは「分からない」にする（書き直しを起こさない）
     if (system.includes('模擬の担当者') && /退職したあと|のページの手順「/.test(JSON.stringify(params.messages))) return { fact_ids: [] };
     if (system.includes('模擬の担当者')) return { fact_ids: ['F-05'] };
+    // 手順の絵の並べ方は、偽の担当では絵にしない
+    if (system.includes('figure-planner')) return { figures: [] };
     if (system.includes('phrase-writer')) {
       const body = JSON.stringify(params.messages);
       const ids = [...new Set([...body.matchAll(/\\"id\\":\\"(T\d+)\\"/g)].map((m) => m[1]))];
@@ -413,6 +415,10 @@ test('/hikitsugi:start：段階をたどって取扱説明書まで進み、途�
     assert.throws(() => hikitsugi('after-leaving', ['yes'], ''), /1 行で教えてください/);
     hikitsugi('after-leaving', ['unknown']);
     assert.throws(() => hikitsugi('after-leaving', ['unknown']), /もう聞いています/);
+    // 自由に足す段（任意）。挙げてもらい、種類を選び、中身を聞く。ここでは「ない」
+    assert.deepEqual(nextStep(work), { step: 'open-items', stage: 'list', question: nextStep(work).question, limit: 5 });
+    assert.match(hikitsugi('open-list', [], 'ない'), /ほかに引き継ぐものはありません/);
+    assert.throws(() => hikitsugi('open-list', [], 'ない'), /もう聞いています/);
     // 共通部分、ページの順に、1回に1つずつ書く
     assert.deepEqual(nextStep(work), { step: 'writer', round: 1, part: 'common' });
     hikitsugi('writer-task', ['1', 'common']);
@@ -486,6 +492,15 @@ test('/hikitsugi:start：段階をたどって取扱説明書まで進み、途�
     assert.throws(() => hikitsugi('check-phrases'), /言い方は重ならずに/);
     write('phrases.json', phrases(15));
     assert.match(hikitsugi('check-phrases'), /言い方を入れました（15 件）/);
+
+    // 手順の絵の並べ方。候補は、物の部品の語がある、部品でない手順だけ（共有フォルダのページの部品の手順は入らない）
+    assert.deepEqual(nextStep(work), { step: 'figures' });
+    assert.match(hikitsugi('figure-task'), /figure-steps\.json、\d+ 件/);
+    const candidates = JSON.parse(readFileSync(join(work, 'figure-steps.json'), 'utf8'));
+    assert.equal(candidates.parts.length, 8);
+    assert.ok(candidates.steps.every((step) => !step.text.includes('Windows キー')));
+    write('figures.json', { figures: [{ step: 'STM-999', items: [{ part: 'router', label: '' }] }] });
+    assert.match(hikitsugi('check-figures'), /絵を 0 件入れました\n検査に通らず付けなかった絵：1 件\n- STM-999：絵の候補の手順ではありません/);
 
     // 前任者の確認。終わるまでは下書き
     assert.deepEqual(nextStep(work), { step: 'review', reviewer: null, page: 'T1', pages: 1 });
@@ -1097,7 +1112,10 @@ test('/hikitsugi:start：退職する担当者を連絡先にした文章は、�
 
 test('確認の印は、確認した人と日付を取扱説明書に付ける', () => {
   const reviewed = markReviewed(fixture(), '田中', '2026-11-06');
-  assert.deepEqual(reviewed.review, { reviewer: '田中', confirmed_on: '2026-11-06' });
+  // 作成の記録には、中身の要約値（記録の鎖の始まり）が付く
+  const { content, ...review } = reviewed.review;
+  assert.deepEqual(review, { reviewer: '田中', confirmed_on: '2026-11-06' });
+  assert.match(content, /^[0-9a-f]{16}$/);
   assert.deepEqual(validate(JSON.parse(readFileSync(join(ROOT, 'plugin/schemas/manual.schema.json'), 'utf8')), reviewed), []);
 });
 
@@ -1288,6 +1306,7 @@ test('/hikitsugi:start：手順ページのない困りごとを Writer に聞�
     hikitsugi('check-next');
     hikitsugi('common-select', [], 'なし');
     hikitsugi('after-leaving', ['unknown']);
+    hikitsugi('open-list', [], 'ない');
 
     write('writer-1-common.json', noSelection(pieces().common));
     hikitsugi('check-writer', ['1', 'common']);

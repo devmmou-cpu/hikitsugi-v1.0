@@ -19,7 +19,12 @@ import { bodyFields } from '../lib/page-check.mjs';
 import { plainProblems } from '../lib/plain-check.mjs';
 import { pagesForPhrases, phraseProblems, withSearchIndex } from '../lib/search-index.mjs';
 import { applyRetireeCheck } from '../lib/retiree-check.mjs';
-import { composeProcedures, libraryForAgents, pageScopeNotes } from '../lib/procedures.mjs';
+import { composeProcedures, evidenceReader, libraryForAgents, pageScopeNotes } from '../lib/procedures.mjs';
+import { loadKit, readKeys, stepFigures } from '../lib/figure-build.mjs';
+import { figureCandidatesOf, partsForPlanner, validateFigures } from '../lib/figures.mjs';
+import { chainProblems } from '../lib/records.mjs';
+import { departedNames, takeoverHits } from '../lib/takeover.mjs';
+import { DETAIL_QUESTIONS, KIND_CHOICES, LIST_QUESTION, nextOpenStep, OPEN_LIMIT, openSummary, recordDetail, recordKind, recordList, stopOpen, writableItems } from '../lib/open-items.mjs';
 import { CHECK_LABELS, missingNote, PAGE_GAP_LIMIT, pageGapComment, pageGapQuestion, pageGaps, recordPageGap } from '../lib/page-quality.mjs';
 import { AFTER_LEAVING_CHOICES, AFTER_LEAVING_DETAIL, AFTER_LEAVING_QUESTION, needsAfterLeaving, recordAfterLeaving } from '../lib/after-leaving.mjs';
 import { approvedSymptoms, COMMON_GAP, commonSymptomsOf, commonUnknownLines, followupQuestion, nextFollowup, recordFollowup, recordSelection, selectionEvidenceProblems, selectionQuestion } from '../lib/common-symptoms.mjs';
@@ -33,7 +38,7 @@ import { PHONE_DIR, writePhoneBundle } from '../renderer/phone.mjs';
 const PC_NAME = '「ITの取扱説明書（PC 用）manual.html」';
 const PHONE_NAME = `「${PHONE_DIR}」フォルダ`;
 import { oversizeMessage, PC_FILE_LIMIT, PC_FILE_TARGET, writeWithinLimit } from '../lib/limits.mjs';
-import { BUNDLE_NAME, bundleOf, changeSummary, nextContactId, nextDeviceId, pagesNeedingPhrases, pagesOfContact, parseMemos, phoneShape, targetKind, UPDATE_KIND_LABELS, updateSummary, withContactPhone, withUpdateMark } from '../lib/update.mjs';
+import { BUNDLE_NAME, bundleOf, changeSummary, nextContactId, nextDeviceId, nextRoutineId, routineUpdateProblems, pagesNeedingPhrases, pagesOfContact, parseMemos, phoneShape, targetKind, UPDATE_KIND_LABELS, updateSummary, withContactPhone, withUpdateMark } from '../lib/update.mjs';
 import { machineIdentity, otherAccountsOf } from '../lib/identity.mjs';
 
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -91,6 +96,11 @@ export function nextStep(work) {
   if (!state.update && !state.passed && round === 1 && !has('manual-1.json') && !has(partFile(1, 'common')) && has('transcript.json') && needsAfterLeaving(readJson(join(work, 'transcript.json')))) {
     return { step: 'after-leaving', question: AFTER_LEAVING_QUESTION, choices: AFTER_LEAVING_CHOICES.map(({ value, label, description }) => ({ value, label, description })), detail: AFTER_LEAVING_DETAIL };
   }
+  // 枠の外を自由に足す段（任意。決まった部分とは別に数える）
+  if (!state.update && !state.passed && round === 1 && !has('manual-1.json') && !has(partFile(1, 'common')) && has('transcript.json')) {
+    const open = openStep(state);
+    if (open) return open;
+  }
   if (!has(`manual-${round}.json`)) {
     const part = writerParts(work, state, round).find((name) => !isChecked(work, partFile(round, name)));
     return { step: 'writer', round, part, ...(has(partFile(round, part)) ? { unchecked: true } : {}) };
@@ -107,6 +117,8 @@ export function nextStep(work) {
     if (gaps.length) return pageGapStep(gaps, state);
   }
   if (state.passed && !readJson(join(work, 'manual-final.json')).search_index) return { step: 'phrases' };
+  // 手順の絵の並べ方。最初に作るときだけ（更新では、文が変わった手順の絵は付けない）
+  if (state.passed && !state.update && !state.review?.done && !('figures' in readJson(join(work, 'manual-final.json')))) return { step: 'figures' };
   if (state.passed && !state.review?.done) {
     const manual = readJson(join(work, 'manual-final.json'));
     if (state.update) return { step: 'review', reviewer: state.update.by, page: state.update.target, pages: 1, update: true };
@@ -288,7 +300,7 @@ function writerTask(work, [round, part]) {
       const saved = join(work, partFile(1, 'common-previous'));
       if (state.leaks && existsSync(saved)) task = { part: 'common', revision: { previous: readJson(saved), findings: [], missing: state.leaks } };
       else if (state.symptom_add?.length && existsSync(saved)) task = { part: 'common', revision: { previous: readJson(saved), findings: [], add_symptoms: state.symptom_add.map(({ id, category, symptom }) => ({ id, category, symptom })) } };
-      else task = { part: 'common' };
+      else task = { part: 'common', ...(writableItems(state.open).length ? { open_items: writableItems(state.open) } : {}) };
     } else if (part === 'symptoms') {
       if (!state.symptom_gaps) throw new Problem('手順ページのない困りごとは挙がっていません');
       task = { part: 'symptoms', gaps: state.symptom_gaps, pages: readJson(join(work, partFile(1, 'common'))).page_plan.map(({ id, symptom }) => ({ id, symptom })) };
@@ -317,7 +329,7 @@ function writerTask(work, [round, part]) {
     // 差し戻しの回は、最初の答えのあとに照合の指摘が出ている。指摘を優先するので、定型の文を強制しない
     if (deadEndFix) revision.page_fix = { page: part, comment: Number(round) > state.round_base + 1 ? `${deadEndFix.comment} ただし、findings の指摘があるときは、指摘に従って直してください。` : deadEndFix.comment, evidence: deadEndFix.evidence };
     if (state.leaks && part === 'common') revision.missing = state.leaks;
-    if (state.update) revision.update = { kind: state.update.kind, ...(addedIsNew(state, previous) ? { add_symptom: state.update.add } : {}), ...(addingContact ? { add_contact: state.update.add_contact } : {}), ...(addingDevice ? { add_device: state.update.add_device } : {}) };
+    if (state.update) revision.update = { kind: state.update.kind, ...(addedIsNew(state, previous) ? { add_symptom: state.update.add } : {}), ...(addingContact ? { add_contact: state.update.add_contact } : {}), ...(addingDevice ? { add_device: state.update.add_device } : {}), ...(state.update.routine ? { routine: state.update.routine } : {}), ...(state.update.add_routine ? { add_routine: state.update.add_routine } : {}) };
     if (part === 'common') {
       revision.previous.page_plan = planOf(previous);
       task = { part: 'common', revision };
@@ -381,13 +393,13 @@ function checkWriter(work, [round, part]) {
     if (schemaProblems.length) throw new Problem(`形式が違います（${part}）：\n${schemaProblems.slice(0, 10).join('\n')}`);
     const adding = state.update.add_contact?.id === part && !previous.contacts.some((contact) => contact.id === part);
     const answer = adding ? sources.transcript.entries.find((entry) => entry.id === state.page_fix?.evidence)?.answer ?? '' : null;
-    checked = checkContact(raw, part, sources, { retiree: state.retiree, others: previous.contacts, answer });
+    checked = checkContact(raw, part, sources, { retiree: departedOf(work, state), others: previous.contacts, answer });
   } else if (state.update?.device === part) {
     raw = withCredentialNone(raw);
     const schemaProblems = validate(writerFormat('device'), raw);
     if (schemaProblems.length) throw new Problem(`形式が違います（${part}）：\n${schemaProblems.slice(0, 10).join('\n')}`);
     const text = new Map(previous.statements.map((statement) => [statement.id, statement.text]));
-    checked = checkDevice(raw, part, sources, { retiree: state.retiree, others: previous.devices.map((device) => ({ id: device.id, name: text.get(device.name) })) });
+    checked = checkDevice(raw, part, sources, { retiree: departedOf(work, state), others: previous.devices.map((device) => ({ id: device.id, name: text.get(device.name) })) });
   } else if (part === 'common') {
     // 症状を足すときだけ、新しいページの行を受け取る。ほかの行は前の版のまま
     const addedRow = added ? raw.page_plan?.find((entry) => entry.id === added.id) : null;
@@ -398,11 +410,13 @@ function checkWriter(work, [round, part]) {
     const output = previous ? { ...filled, page_plan: addedRow ? [...plan, addedRow] : plan } : beforeAdding ? { ...filled, page_plan: withAddedRows(beforeAdding.page_plan, state.symptom_add) } : filled;
     const schemaProblems = validate(writerFormat('common'), output);
     if (schemaProblems.length) throw new Problem(`形式が違います（共通部分）：\n${schemaProblems.slice(0, 10).join('\n')}`);
-    checked = checkCommon(output, sources, { retiree: state.retiree });
+    checked = checkCommon(output, sources, { retiree: departedOf(work, state) });
     // 載せ漏れの書き直しは足すだけ。前の版が消えていれば受け付けない
     if (beforeAdding && !state.leaks) checked.problems.push(...droppedFromCommon(beforeAdding, raw));
     // 症状を足す更新も足すだけ。Writer が連絡先、定期作業、機器を空で返すと、足したばかりの連絡先が消えるので受け付けない
     if (previous && added && !state.leaks) checked.problems.push(...droppedFromCommon(previousPiece(previous, 'common'), raw));
+    // 決まった作業を足す・直す更新：対象のほかの作業、連絡先、機器、文を変えない
+    if (previous && ['routine', 'add_routine'].includes(state.update?.kind)) checked.problems.push(...droppedFromCommon(previousPiece(previous, 'common'), raw), ...routineUpdateProblems(previousPiece(previous, 'common'), raw, state.update));
     if (state.leaks) {
       const before = Number(round) === 1 ? readJson(join(work, partFile(1, 'common-previous'))) : previousPiece(previous, 'common');
       checked.problems.push(...droppedFromCommon(before, raw));
@@ -412,7 +426,7 @@ function checkWriter(work, [round, part]) {
     if (schemaProblems.length) throw new Problem(`形式が違います（${part}）：\n${schemaProblems.slice(0, 10).join('\n')}`);
     const entry = plan.find((candidate) => candidate.id === part);
     if (!entry) throw new Problem(`手順ページの一覧にありません：${part}`);
-    checked = checkPage(raw, entry, contacts, sources, { retiree: state.retiree });
+    checked = checkPage(raw, entry, contacts, sources, { retiree: departedOf(work, state) });
     const addition = Number(round) === 1 ? state.symptom_add?.find((candidate) => candidate.id === part) : null;
     if (addition) checked.problems.push(...basisProblems(checked.output.statements, addition));
     const deadEndFix = state.dead_end_fixes?.[part];
@@ -469,7 +483,9 @@ function assembleRound(work, round) {
   const assembled = round === 1
     ? (() => {
         const common = load('common');
-        return assembleManual(common, Object.fromEntries(common.page_plan.map((entry) => [entry.id, load(entry.id)])), header);
+        const made = assembleManual(common, Object.fromEntries(common.page_plan.map((entry) => [entry.id, load(entry.id)])), header);
+        const summary = openSummary(state.open);
+        return summary && (summary.out_of_scope.length || summary.not_asked.length) ? { ...made, open_items: summary } : made;
       })()
     : (() => {
         const previous = readJson(join(work, `findings-${round - 1}.json`)).previous_manual;
@@ -485,7 +501,7 @@ function assembleRound(work, round) {
   // 足した連絡先には古い番号がないので、置き換えない
   const oldContact = contactPart && round > 1 ? readJson(join(work, `findings-${round - 1}.json`)).previous_manual.contacts.find((contact) => contact.id === contactPart) : null;
   const withNewPhone = (target) => (oldContact ? withContactPhone(target, contactPart, oldContact.phone, load(contactPart).contact.phone, state.page_fix?.evidence) : target);
-  const { manual: composed, problems } = composeProcedures(withNewPhone(assembled), sources, { retiree: state.retiree });
+  const { manual: composed, problems } = composeProcedures(withNewPhone(assembled), sources, { retiree: departedOf(work, state) });
   if (problems.length) throw new Problem(`手順部品の指定やページの形に問題があります：\n${problems.join('\n')}`);
   const manual = state.symptom_exclusions?.length ? { ...composed, symptom_exclusions: state.symptom_exclusions } : composed;
   // 載せ漏れは、共通部分を1回だけ書き直して埋める。それでも残れば止める
@@ -605,7 +621,7 @@ function checkVerification(work, [round]) {
     results = mergeVerification(readJson(join(work, `verification-${Number(round) - 1}.json`)), raw.results.filter((result) => inScope.has(result.statement)), manual, scope).results;
   }
   // 退職する担当者を連絡先にしている文章は、AI の判定によらず文字列の照合で「危険」にする
-  const { verification } = applyRetireeCheck({ schema_version: 1, company: state.company, round: Number(round), results }, manual, state.retiree);
+  const { verification } = applyRetireeCheck({ schema_version: 1, company: state.company, round: Number(round), results }, manual, departedOf(work, state));
   checkSchema('verification', verification);
   writeJson(path, verification);
   markChecked(work, `verification-${round}.json`);
@@ -664,12 +680,66 @@ function checkPhrases(work) {
   const only = state.update?.phrase_pages;
   const kept = only ? readJson(join(work, 'search-index-previous.json')).filter((entry) => !only.includes(entry.page)).map(({ page, phrases }) => ({ id: page, phrases })) : [];
   const raw = { ...written, pages: [...kept, ...written.pages] };
-  const problems = phraseProblems(raw, manual, state.retiree);
+  const problems = phraseProblems(raw, manual, departedOf(work, state));
   if (problems.length) throw new Problem(`言い方に問題があります：\n${problems.join('\n')}`);
   const indexed = withSearchIndex(manual, raw);
   checkSchema('manual', indexed);
   writeJson(finalPath, indexed);
   return `言い方を入れました（${indexed.search_index.reduce((sum, entry) => sum + entry.phrases.length, 0)} 件）`;
+}
+
+// ---- 手順の絵 ----
+/** 絵の候補の手順。根拠の文（聞き取りの答え、調査の値、部品の文面）を添える。 */
+function figureCandidates(work, manual) {
+  const library = new Map(readJson(join(work, 'library.json')).procedures.map((part) => [part.id, part.text]));
+  const reader = evidenceReader({ survey: readJson(join(work, 'survey.json')), transcript: readJson(join(work, 'transcript.json')) });
+  return figureCandidatesOf(manual, (ref) => (ref.startsWith('LIB-') ? library.get(ref) ?? null : reader(ref)));
+}
+
+function figureTask(work) {
+  const manual = readJson(join(work, 'manual-final.json'));
+  const kit = loadKit();
+  const steps = figureCandidates(work, manual);
+  writeJson(join(work, 'figure-steps.json'), { parts: partsForPlanner(kit), steps });
+  return `絵の候補の手順を保存しました（figure-steps.json、${steps.length} 件）`;
+}
+
+/** 担当が返した並べ方を検査し、通ったものだけを説明書に入れる。通らなかったものは理由と一緒に残し、付けない。 */
+function checkFigures(work) {
+  const finalPath = join(work, 'manual-final.json');
+  const manual = readJson(finalPath);
+  const written = readJson(join(work, 'figures.json'));
+  if (!Array.isArray(written.figures)) throw new Problem('figures.json の形が違います（figures の配列が要ります）');
+  const { kept, dropped } = validateFigures(written, readJson(join(work, 'figure-steps.json')).steps);
+  const next = { ...manual, figures: kept };
+  checkSchema('manual', next);
+  writeJson(finalPath, next);
+  writeJson(join(work, 'figure-dropped.json'), { dropped });
+  return [`絵を ${kept.length} 件入れました`, ...(dropped.length ? [`検査に通らず付けなかった絵：${dropped.length} 件`, ...dropped.map(({ problems }) => `- ${problems.join(' / ')}`)] : [])].join('\n');
+}
+
+/** 前任者の確認で「この絵は外す」。キーの絵も部品の絵も付けない。 */
+function reviewFigureOff(work, [stepId]) {
+  const finalPath = join(work, 'manual-final.json');
+  const manual = readJson(finalPath);
+  if (!manual.statements.some((statement) => statement.id === stepId)) throw new Problem(`文章がありません：${stepId}`);
+  const next = { ...manual, figure_off: [...new Set([...(manual.figure_off ?? []), stepId])] };
+  checkSchema('manual', next);
+  writeJson(finalPath, next);
+  return `${stepId} の絵を外しました`;
+}
+
+/** 確認の画面に出す、絵の中身の説明（文字）。 */
+function figureLines(page, manual) {
+  const kit = loadKit();
+  const byId = new Map(manual.statements.map((statement) => [statement.id, statement]));
+  const planned = new Map((manual.figures ?? []).map((figure) => [figure.step, figure]));
+  const made = page.source === 'free' ? new Map() : stepFigures([...page.first_steps, ...page.steps], manual);
+  return [...made.keys()].map((id) => {
+    const keys = readKeys(byId.get(id).text);
+    const what = keys ? keys.keys.join(' ＋ ') : planned.get(id).items.map(({ part, label }) => `${kit.parts[part].name}${label ? `「${label}」` : ''}`).join(' → ');
+    return `${id}「${byId.get(id).text}」の絵：${what}`;
+  });
 }
 
 // ---- 前任者の確認 ----
@@ -720,6 +790,11 @@ function reviewShow(work, [pageId]) {
     const { name, location, purpose, impact, credential_location: credential, credential_none: none, caution } = deviceShown;
     return [`${pageId}：${textsOf(manual, [name])[0]}`, ...textsOf(manual, [location, purpose, impact]), ...section2(manual, 'パスワードを置いてある場所', credential), ...(none ? ['パスワード：ありません', ...textsOf(manual, [none])] : []), ...section2(manual, 'やってはいけないこと', caution)].join('\n');
   }
+  const routineShown = manual.routines.find((candidate) => candidate.id === pageId);
+  if (routineShown) {
+    const label = { weekly: '毎週', monthly: '毎月', yearly: '毎年' }[routineShown.frequency];
+    return [`${pageId}：${textsOf(manual, [routineShown.title])[0]}（${label}${routineShown.month ? `、${routineShown.month}月` : ''}）`, '【手順】', ...textsOf(manual, routineShown.steps)].join('\n');
+  }
   const page = manual.symptom_pages.find((candidate) => candidate.id === pageId);
   if (!page) throw new Problem(`手順ページがありません：${pageId}`);
   const fields = bodyFields(page);
@@ -736,6 +811,8 @@ function reviewShow(work, [pageId]) {
     ...section('手順', [...fields.branches, ...fields.steps, ...fields.goal, ...fields.exceptions]),
     ...(contact ? ['【それでもだめなら】', `${contact.name} ${contact.phone}`.trim(), ...textsOf(manual, [page.fallback.message])] : []),
     ...section('この症状で使う会社の情報', fields.info_rows),
+    // 型から作った絵の中身。「この絵は外す」は hikitsugi review-figure-off <文章の ID>
+    ...(figureLines(page, manual).length ? ['【絵】', ...figureLines(page, manual)] : []),
     // 物に触る手順で、記録がないもの。画面と同じ決まった文を出す
     ...(missingNote(page, manual) ? ['【記録がないもの】', missingNote(page, manual)] : []),
   ].join('\n');
@@ -756,7 +833,14 @@ function reviewOk(work, [pageId]) {
   }
   // 全ページが済んだので、確認の印を付ける。下書きの HTML は作り直す
   const today = new Date().toLocaleDateString('sv');
-  writeJson(finalPath, checkSchema('manual', markReviewed(manual, state.review.reviewer, today)));
+  // 作成の記録に、この PC のアカウント名・ドメイン名・PC 名を残す（記録で、本人確認ではない）
+  let identity;
+  try {
+    identity = machineIdentity();
+  } catch (error) {
+    throw new Problem(error.message);
+  }
+  writeJson(finalPath, checkSchema('manual', markReviewed(manual, state.review.reviewer, today, identity)));
   rmSync(join(work, 'manual.html'), { force: true });
   // 作業フォルダの中だけ。前の名前（phone）の束も消す
   for (const name of [PHONE_DIR, 'phone']) rmSync(join(work, name), { recursive: true, force: true });
@@ -793,6 +877,142 @@ function reviewFix(work, [pageId], stdin) {
     review: { ...state.review, pages },
   });
   return `記録しました（${added.entry.id}）。${pageId} を書き直します`;
+}
+
+// ---- 枠の外を自由に足す段 ----
+function openStep(state) {
+  if (!state.open) return { step: 'open-items', stage: 'list', question: LIST_QUESTION, limit: OPEN_LIMIT };
+  const next = nextOpenStep(state.open);
+  if (!next) return null;
+  const at = { asked: state.open.index, total: state.open.items.length };
+  if (next.stage === 'kind') return { step: 'open-items', stage: 'kind', name: next.item.name, choices: KIND_CHOICES.map(({ value, label, description }) => ({ value, label, description })), ...at };
+  return { step: 'open-items', stage: 'detail', name: next.item.name, kind: next.item.kind, question: DETAIL_QUESTIONS[next.item.kind](next.item.name), ...at };
+}
+
+function openGuard(work) {
+  const state = readJson(join(work, 'state.json'));
+  if (!state.interview_done || (state.common && state.common.stage !== 'done') || state.update || state.passed) throw new Problem('ほかに引き継ぐものを聞ける段階ではありません');
+  return state;
+}
+
+function openList(work, _args, stdin) {
+  const state = openGuard(work);
+  if (state.open) throw new Problem('ほかに引き継ぐものは、もう聞いています');
+  const transcriptPath = join(work, 'transcript.json');
+  let recorded;
+  try {
+    recorded = recordList(readJson(transcriptPath), { answer: stdin, answeredAt: new Date().toISOString() });
+  } catch (error) {
+    throw new Problem(error.message);
+  }
+  checkSchema('transcript', recorded.transcript);
+  writeJson(transcriptPath, recorded.transcript);
+  writeJson(join(work, 'state.json'), { ...state, open: recorded.open });
+  const { items, not_asked: rest } = recorded.open;
+  if (!items.length) return '記録しました。ほかに引き継ぐものはありません';
+  return [`記録しました。${items.length} 件を 1 件ずつ聞きます：${items.map((item) => item.name).join('、')}`, ...(rest.length ? [`上限（${OPEN_LIMIT} 件）を超えた分は、まだ聞いていないものに回します：${rest.join('、')}`] : [])].join('\n');
+}
+
+function openKind(work, [kind]) {
+  const state = openGuard(work);
+  let open;
+  try {
+    open = recordKind(state.open, kind);
+  } catch (error) {
+    throw new Problem(error.message);
+  }
+  writeJson(join(work, 'state.json'), { ...state, open });
+  return kind === 'out_of_scope' ? '対象外として、題名だけを残します' : '中身を聞きます';
+}
+
+function openDetail(work, status, stdin) {
+  const state = openGuard(work);
+  const transcriptPath = join(work, 'transcript.json');
+  let recorded;
+  try {
+    recorded = recordDetail(readJson(transcriptPath), state.open, { answer: status === 'answered' ? stdin : '分からない。', status, answeredAt: new Date().toISOString() });
+  } catch (error) {
+    throw new Problem(error.message);
+  }
+  checkSchema('transcript', recorded.transcript);
+  writeJson(transcriptPath, recorded.transcript);
+  writeJson(join(work, 'state.json'), { ...state, open: recorded.open });
+  return `記録しました（${recorded.transcript.entries.at(-1).id}）`;
+}
+
+function openStop(work) {
+  const state = openGuard(work);
+  if (!state.open) throw new Problem('ほかに引き継ぐものを、まだ聞いていません');
+  writeJson(join(work, 'state.json'), { ...state, open: stopOpen(state.open) });
+  return 'ここまでにしました。残りは「まだ聞いていないもの」に残し、更新で足せます';
+}
+
+// ---- 担当の引き継ぎ ----
+/** 退職した人の一覧（検査に使う）。説明書ができる前は、最初の前任者だけ。 */
+function departedOf(work, state) {
+  const path = join(work, 'manual-final.json');
+  return departedNames(state.retiree, existsSync(path) ? readJson(path) : null);
+}
+
+function takeoverReport(manual, handover) {
+  const { blocking, other } = takeoverHits(manual, handover.from);
+  const left = other.filter((item) => !(handover.ok ?? []).includes(item.id));
+  const lines = [`担当の引き継ぎ：${handover.from} さん → ${handover.to} さん`];
+  lines.push(blocking.length ? `直すまで完了しないもの：${blocking.length} 件` : '直すまで完了しないもの：なし');
+  for (const item of blocking) lines.push(`- ${item.id}（${item.where}）：${item.text}`);
+  lines.push(left.length ? `1 件ずつ確かめるもの（名前が出てくるほかの文）：${left.length} 件` : '1 件ずつ確かめるもの：なし');
+  for (const item of left) lines.push(`- ${item.id}：${item.text}`);
+  return { lines, blocking, left };
+}
+
+/** 担当を引き継ぐ。去る人と新しい担当の名前を受け取り、去る人が残っている場所を出す。 */
+function takeoverStart(work, args) {
+  const [from, to] = args.join(' ').split(/\s*(?:→|->|>)\s*/).map((name) => name?.trim().replace(/(さん|様|氏)$/, ''));
+  if (!from || !to) throw new UsageError('使い方：takeover-start <去る人> → <新しい担当>');
+  if (from === to) throw new Problem('去る人と新しい担当が同じです');
+  const state = readJson(join(work, 'state.json'));
+  if (!state.updater) throw new Problem('先に update-start で更新する人の名前を記録してください');
+  if (state.update) throw new Problem(`${state.update.target} の更新が終わっていません`);
+  const handover = { from, to, ok: [] };
+  writeJson(join(work, 'state.json'), { ...state, handover });
+  return [...takeoverReport(readJson(join(work, 'manual-final.json')), handover).lines, '直すものは、ふつうの更新（連絡先を直す、手順を直す、決まった作業を直す）で 1 件ずつ直します'].join('\n');
+}
+
+function takeoverStatus(work) {
+  const state = readJson(join(work, 'state.json'));
+  if (!state.handover) throw new Problem('担当の引き継ぎを始めていません');
+  return takeoverReport(readJson(join(work, 'manual-final.json')), state.handover).lines.join('\n');
+}
+
+/** 名前が出てくるほかの文を、このままでよいとする。 */
+function takeoverOk(work, [id]) {
+  const state = readJson(join(work, 'state.json'));
+  if (!state.handover) throw new Problem('担当の引き継ぎを始めていません');
+  const { left } = takeoverReport(readJson(join(work, 'manual-final.json')), state.handover);
+  if (!left.some((item) => item.id === id)) throw new Problem(`確かめるものの一覧にありません：${id}`);
+  writeJson(join(work, 'state.json'), { ...state, handover: { ...state.handover, ok: [...state.handover.ok, id] } });
+  return `${id} はこのままにします`;
+}
+
+/** 直すものがなくなり、ほかの文を全部確かめたら、引き継ぎの記録を付ける。 */
+function takeoverFinish(work) {
+  const state = readJson(join(work, 'state.json'));
+  if (!state.handover) throw new Problem('担当の引き継ぎを始めていません');
+  if (state.update) throw new Problem(`${state.update.target} の更新が終わっていません`);
+  const finalPath = join(work, 'manual-final.json');
+  const manual = readJson(finalPath);
+  const { lines, blocking, left } = takeoverReport(manual, state.handover);
+  if (blocking.length || left.length) throw new Problem(`まだ完了できません\n${lines.join('\n')}`);
+  const today = new Date().toISOString().slice(0, 10);
+  const marked = withUpdateMark(manual, { target: 'handover', by: state.updater, date: today, kind: 'handover', identity: state.updater_identity, summary: `${state.handover.from} さん → ${state.handover.to} さん` });
+  const record = marked.updates.at(-1);
+  // 引き継ぎの記録には、去る人と新しい担当を残す（要約値は、この記録を足す前の中身で計算済み）
+  const next = { ...marked, updates: [...marked.updates.slice(0, -1), { ...record, from: state.handover.from, to: state.handover.to }] };
+  checkSchema('manual', next);
+  writeJson(finalPath, next);
+  const { handover: _done, ...rest } = state;
+  writeJson(join(work, 'state.json'), { ...rest, needs_render: true });
+  return `担当の引き継ぎを記録しました（${state.handover.from} さん → ${state.handover.to} さん）。説明書を書き出します`;
 }
 
 // ---- 手順の抜け（ページの質） ----
@@ -1084,15 +1304,18 @@ function updateStart(work, nameParts) {
   const state = readJson(join(work, 'state.json'));
   if (!state.passed || !state.review?.done) throw new Problem('取扱説明書が完成していないので、更新を始められません');
   writeJson(join(work, 'state.json'), { ...state, updater: by, updater_identity: identity });
-  const updates = readJson(join(work, 'manual-final.json')).updates ?? [];
+  const current = readJson(join(work, 'manual-final.json'));
+  const updates = current.updates ?? [];
   const latest = updates.at(-1);
   const lines = [
     `${by} さんの更新を始めます`,
-    `記録します：アカウント名 ${identity.account ?? NOT_READ}、PC 名 ${identity.host ?? NOT_READ}${identity.source === 'env' ? '（環境変数で指定）' : ''}。説明書の画面には出さず、manual.json にだけ残します`,
+    `記録します：アカウント名 ${identity.account ?? NOT_READ}${identity.domain ? `（ドメイン ${identity.domain}）` : ''}、PC 名 ${identity.host ?? NOT_READ}${identity.source === 'env' ? '（環境変数で指定）' : ''}。PC 用と印刷の「更新の記録」に出ます（スマホ用には出しません）。記録で、本人確認ではありません`,
     latest ? `直近の更新：${latest.date} ${latest.by}（アカウント名 ${latest.account ?? NOT_RECORDED}、PC 名 ${latest.host ?? NOT_RECORDED}）` : '更新の記録はまだありません',
   ];
   const others = otherAccountsOf(updates, by, identity.account);
   if (others.length) lines.push(`注意：「${by}」の名前は、前の更新で別のアカウント名（${others.join('、')}）と組になっていました。続けるかを本人に確かめてください`);
+  // 記録の鎖：前の記録や中身が、プラグインの外で書き換えられていれば気づく（防ぐものではない）
+  for (const problem of chainProblems(current)) lines.push(`注意：${problem}。誰が変えたかは、OneDrive の版履歴で確かめられます。続けるかを本人に確かめてください`);
   lines.push(...restored);
   return lines.join('\n');
 }
@@ -1123,6 +1346,7 @@ function updateTargets(work) {
     pages: manual.symptom_pages.map((page) => ({ id: page.id, title: text.get(page.title) })),
     contacts: manual.contacts.map((contact) => ({ id: contact.id, name: contact.name, phone: contact.phone })),
     devices: manual.devices.map((device) => ({ id: device.id, name: text.get(device.name) })),
+    routines: manual.routines.map((routine) => ({ id: routine.id, title: text.get(routine.title), frequency: routine.frequency })),
   });
 }
 
@@ -1163,7 +1387,7 @@ function beginUpdate(work, { kind, target, title, comment, question, todo, extra
     review: { ...state.review, done: false },
   });
   // 足すページ、連絡先、機器には前の版がないので「書きます」と伝える
-  return `記録しました（${added.entry.id}）。${target} を${['add', 'add_contact', 'add_device'].includes(kind) ? '書きます' : '書き直します'}`;
+  return `記録しました（${added.entry.id}）。${target} を${['add', 'add_contact', 'add_device', 'add_routine'].includes(kind) ? '書きます' : '書き直します'}`;
 }
 
 /** 手順ページ、連絡先、機器を直す。内容は標準入力で受け取る。 */
@@ -1176,6 +1400,10 @@ function updateFix(work, [target], stdin) {
   if (kind === 'contact') {
     const { name } = manual.contacts.find((contact) => contact.id === target);
     return beginUpdate(work, { kind, target, title: name, comment: stdin, question: `連絡先「${name}」について、直すところを教えてください。`, todo: [target], extra: { contact: target } });
+  }
+  if (kind === 'routine') {
+    const routine = manual.routines.find((candidate) => candidate.id === target);
+    return beginUpdate(work, { kind, target, title: text.get(routine.title), comment: stdin, question: `決まった作業「${text.get(routine.title)}」について、直すところを教えてください。`, todo: ['common'], extra: { routine: target } });
   }
   if (kind === 'device') {
     const device = manual.devices.find((candidate) => candidate.id === target);
@@ -1213,6 +1441,16 @@ function updateAddContact(work, [type], stdin) {
 function updateAddDevice(work, _args, stdin) {
   const id = nextDeviceId(readJson(join(work, 'manual-final.json')));
   return beginUpdate(work, { kind: 'add_device', target: id, title: '新しい機器', comment: stdin, question: ADD_DEVICE_QUESTION, todo: [id], extra: { device: id, add_device: { id } } });
+}
+
+export const ADD_ROUTINE_QUESTION = '決まった作業を足します。作業の名前、やり方、終わったことを何で確かめるか、だれがしているかを教えてください。毎年の作業なら、何月かも教えてください。分からないものは「分からない」と書いてください。';
+const FREQUENCIES = ['weekly', 'monthly', 'yearly'];
+
+/** 決まった作業を足す。間隔は本人が選び（weekly、monthly、yearly）、ID はプログラムが決める。内容は標準入力で受け取る。 */
+function updateAddRoutine(work, [frequency], stdin) {
+  if (!FREQUENCIES.includes(frequency)) throw new UsageError('使い方：update-add-routine <weekly|monthly|yearly>（内容は標準入力。決まった間隔でない作業は、症状を足すか手順を直す）');
+  const id = nextRoutineId(readJson(join(work, 'manual-final.json')));
+  return beginUpdate(work, { kind: 'add_routine', target: id, title: '新しい決まった作業', comment: stdin, question: ADD_ROUTINE_QUESTION, todo: ['common'], extra: { routine: id, add_routine: { id, frequency } } });
 }
 
 /** 差し戻しの上限で止まった更新を取り消し、前の説明書に戻す。 */
@@ -1370,6 +1608,19 @@ const COMMANDS = {
   'review-fix': reviewFix,
   'dead-end-answer': deadEndAnswer,
   'page-gap-answer': pageGapAnswer,
+  'update-add-routine': updateAddRoutine,
+  'open-list': openList,
+  'open-kind': openKind,
+  'open-detail': (work, _args, stdin) => openDetail(work, 'answered', stdin),
+  'open-unknown': (work) => openDetail(work, 'unknown', ''),
+  'open-stop': openStop,
+  'takeover-start': takeoverStart,
+  'takeover-status': takeoverStatus,
+  'takeover-ok': takeoverOk,
+  'takeover-finish': takeoverFinish,
+  'figure-task': figureTask,
+  'check-figures': checkFigures,
+  'review-figure-off': reviewFigureOff,
   'page-gap-unknown': pageGapUnknown,
   'after-leaving': afterLeaving,
   'dead-end-unknown': deadEndUnknown,
@@ -1398,7 +1649,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const [command, ...args] = process.argv.slice(2);
   const work = resolve(process.env.HIKITSUGI_WORK ?? 'hikitsugi-work');
   try {
-    const stdin = ['record', 'review-fix', 'dead-end-answer', 'page-gap-answer', 'after-leaving', 'update-fix', 'update-add', 'update-add-contact', 'update-add-device', 'update-memo'].includes(command) ? readFileSync(0, 'utf8') : '';
+    const stdin = ['record', 'review-fix', 'dead-end-answer', 'update-add-routine', 'open-list', 'open-detail', 'page-gap-answer', 'after-leaving', 'update-fix', 'update-add', 'update-add-contact', 'update-add-device', 'update-memo'].includes(command) ? readFileSync(0, 'utf8') : '';
     console.log(run(command, args, { work, stdin }));
   } catch (error) {
     if (error instanceof Problem) {

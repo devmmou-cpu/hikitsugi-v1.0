@@ -329,9 +329,9 @@ test('更新の印：連絡先はそれを使うページに付け、機器は�
   assert.deepEqual(withUpdateMark(manual, { target: 'T1', by: '佐藤', date: '2026-12-01' }).updates[0].pages, ['T1']);
 });
 
-test('スキルの案内：update の4択と、更新に Claude Code が要ることがそろっている', () => {
+test('スキルの案内：update の4択（案 B、11/15）と、更新に Claude Code が要ることがそろっている', () => {
   const skill = readFileSync(join(ROOT, 'plugin/skills/start/SKILL.md'), 'utf8');
-  for (const words of ['「連絡先・機器」「症状を足す」「手順を直す」「後任のメモから取り込む」', '「連絡先を直す」「連絡先を足す」「機器を直す」「機器を足す」', '「業者」と「社内の相談先」', 'update-add-contact', 'update-add-device', 'update-fix', 'update-add', 'update-memo', 'update-cancel', '更新には Claude Code が要ります', 'update-output']) assert.ok(skill.includes(words), words);
+  for (const words of ['「連絡先・機器・作業」「症状を足す」「手順を直す」「メモ・担当の引き継ぎ」', '「直す」「連絡先を足す」「機器・ソフトを足す」「決まった作業を足す」', '「後任のメモから取り込む」「担当を引き継ぐ」', '「毎週」「毎月」「毎年」「決まった間隔ではない」', 'update-add-routine', 'takeover-start', 'takeover-ok', 'takeover-finish', '「業者」と「社内の相談先」', 'update-add-contact', 'update-add-device', 'update-fix', 'update-add', 'update-memo', 'update-cancel', '更新には Claude Code が要ります', 'update-output']) assert.ok(skill.includes(words), words);
   assert.ok(!skill.includes('### done'));
   assert.ok(readFileSync(join(ROOT, 'plugin/agents/writer.md'), 'utf8').includes('task.revision.update'));
 });
@@ -346,7 +346,8 @@ test('更新の記録：内容は60字までで文の切れ目で切り、種類
   assert.equal(updateSummary('あ'.repeat(70)), `${'あ'.repeat(60)}…`, '切れ目がなければ60字で切る');
   const first = withUpdateMark(manual, { target: 'T1', by: '佐藤', date: '2026-12-01', summary: '受付を直す', kind: 'page' });
   assert.equal(first.review.updated_by, '佐藤');
-  assert.deepEqual(first.updates[0], { target: 'T1', pages: ['T1'], by: '佐藤', date: '2026-12-01', kind: 'page', summary: '受付を直す' });
+  const { prev: _prev, content: _content, ...firstRecord } = first.updates[0];
+  assert.deepEqual(firstRecord, { target: 'T1', pages: ['T1'], by: '佐藤', date: '2026-12-01', kind: 'page', summary: '受付を直す' });
   const second = withUpdateMark(first, { target: 'T1', by: '社長', date: '2027-01-10', summary: '番号を直す', kind: 'memo' });
   assert.equal(second.review.updated_by, '佐藤・社長');
   assert.equal(second.review.updated_on, '2027-01-10');

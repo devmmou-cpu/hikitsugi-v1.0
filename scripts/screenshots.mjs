@@ -27,13 +27,17 @@ process.env.HIKITSUGI_IDENTITY ??= JSON.stringify({ account: 'user-a', host: 'OK
 import { CHECKS, COLOR_CHECKS, VIEWPORTS } from './visual-spec-checks.mjs';
 import { phoneFileProblems } from '../plugin/renderer/phone.mjs';
 
-// 操作の図の検査。LIB-013 の文面が ① にあるページにだけ3枚あり、見えていて、枠の中に収まり、暖色の印と赤い×の色が正しいこと
+// 操作の図の検査。手描きの 3 枚（承認済み）は LIB-013 の文面が ① にあるページにだけあり、① の中にあること。
+// 型から作った絵（キーの絵、部品を並べる絵。11/15〜）も含めて、すべての絵が見えていて、置き場所の枠の中に収まり、暖色の印と赤い×と文字の色が正しいこと
 const FIGURE_PART_TEXT = JSON.parse(readFileSync(new URL('../plugin/library/procedures.json', import.meta.url), 'utf8')).procedures.find((part) => part.id === 'LIB-013').text;
+const HAND_FIGURE_ALTS = Object.values(JSON.parse(readFileSync(new URL('../plugin/library/figures.json', import.meta.url), 'utf8')).figures).map((figure) => figure.alt);
 const figureCheck = (rootExpression) => `JSON.stringify((() => {
+  const HAND = ${JSON.stringify(HAND_FIGURE_ALTS)};
   const root = ${rootExpression};
   const firsts = [...root.querySelectorAll('.first-body')];
   const expected = firsts.some((el) => el.textContent.includes(${JSON.stringify(FIGURE_PART_TEXT)})) ? 3 : 0;
   const figures = [...root.querySelectorAll('.step-figure')];
+  const hand = figures.filter((el) => HAND.includes(el.getAttribute('aria-label')));
   const resolved = (name) => {
     const probe = document.createElement('div');
     probe.style.color = 'var(' + name + ')';
@@ -43,22 +47,24 @@ const figureCheck = (rootExpression) => `JSON.stringify((() => {
     return color;
   };
   const shown = (el) => { const box = el.getBoundingClientRect(); return getComputedStyle(el).display !== 'none' && box.width >= 200 && box.height > 0; };
-  const inside = (el) => { const box = el.getBoundingClientRect(); const outer = el.closest('.first').getBoundingClientRect(); return box.left >= outer.left && box.right <= outer.right; };
+  // 置き場所の枠：① の中なら ① の枠、手順なら手順の行、決まった作業なら作業の行
+  const inside = (el) => { const box = el.getBoundingClientRect(); const outer = (el.closest('.first') ?? el.closest('li') ?? el.parentElement).getBoundingClientRect(); return box.left >= outer.left - 1 && box.right <= outer.right + 1; };
   const marks = (name) => [...root.querySelectorAll('.step-figure [style*="' + name + '"]')];
   return {
     expected,
-    count: figures.length,
-    inFirst: figures.every((el) => el.closest('.first-body')),
+    count: hand.length,
+    all: figures.length,
+    inFirst: hand.every((el) => el.closest('.first-body')),
     shown: figures.every(shown),
     inside: figures.every(inside),
-    accent: marks('--accent').length === figures.length && marks('--accent').every((el) => getComputedStyle(el).stroke === resolved('--accent')),
-    cross: marks('--danger-fg').length === (figures.length ? 1 : 0) && marks('--danger-fg').every((el) => getComputedStyle(el).stroke === resolved('--danger-fg')),
+    accent: marks('--accent').every((el) => getComputedStyle(el).stroke === resolved('--accent')),
+    cross: marks('--danger-fg').every((el) => getComputedStyle(el).stroke === resolved('--danger-fg')),
     text: [...root.querySelectorAll('.step-figure text')].every((el) => getComputedStyle(el).fill === resolved('--ink')),
   };
 })())`;
 const figureProblems = (result, label) => {
   if (result.count !== result.expected) return [`${label}：操作の図の数が ${result.expected} 枚のはずが ${result.count} 枚`];
-  if (!result.count) return [];
+  if (!result.all) return [];
   return Object.entries({ inFirst: '① の中にありません', shown: '見えていません', inside: '① の枠からはみ出しています', accent: '暖色の印の色が違います', cross: '×の色が赤ではありません', text: '文字の色が違います' })
     .filter(([key]) => !result[key])
     .map(([, message]) => `${label}：操作の図 ${message}`);

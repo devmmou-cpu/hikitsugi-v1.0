@@ -599,11 +599,12 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 
 .update-log th {
   font-weight: 700;
-  white-space: nowrap;
 }
 
-/* 日付と種類は広い幅でだけ1行にする。電話番号は折り返さないので、狭い幅ではこちらを折り返す */
+/* 日付と種類と見出しは広い幅でだけ1行にする。電話番号は折り返さないので、狭い幅ではこちらを折り返す。
+   記録した PC の列（11/15）を足して 6 列になったので、狭い幅では見出しも折り返す */
 @media (min-width: 700px) {
+  .update-log th,
   .update-log .update-date,
   .update-log .update-kind {
     white-space: nowrap;

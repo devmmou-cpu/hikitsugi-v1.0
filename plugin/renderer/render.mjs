@@ -15,10 +15,12 @@ import { STYLES } from './styles.mjs';
 import { oversizeMessage, PC_FILE_LIMIT, writeWithinLimit } from '../lib/limits.mjs';
 import { forDisplay } from '../lib/display.mjs';
 import { callScriptProblems, replyProblems } from '../lib/reply.mjs';
-import { firstStepFigures } from '../lib/figures.mjs';
+import { pageFigures, routineFigures } from '../lib/figures.mjs';
 import { pageScopeNotes, routineScopeNotes } from '../lib/procedures.mjs';
 import { missingNote } from '../lib/page-quality.mjs';
 import { latestUpdateOf, UPDATE_KIND_LABELS } from '../lib/update.mjs';
+import { lastRecordDigest, recordsOf } from '../lib/records.mjs';
+import { currentOwner } from '../lib/takeover.mjs';
 import { notConsultedLabels } from '../lib/common-symptoms.mjs';
 
 // 定番の症状のうち、前任者が相談を受けたことがないと答えたもの。手順は書かず、題名と行き先だけを出す（段 2）
@@ -389,7 +391,38 @@ export const MEMO_NO_JS = '<p class="memo-nojs">メモは PC 版で書けます<
 // 欄の中身は JavaScript が作る。JavaScript なしでは何も出ないので、隠す指定が要らない
 const memoHtml = (id, name) => `<div class="memo is-empty" data-memo="${esc(id)}" data-memo-name="${esc(name)}"></div>`;
 
-/** 更新の記録の表。担当が代わっても、誰が何を確認したかを追えるようにする。新しい順。 */
+/** 記録した PC の表示。ドメイン名\アカウント名 ／ PC 名。環境変数で指定した値は、そう書く。 */
+export function machineText(record) {
+  if (!record.account && !record.host) return '記録なし';
+  const account = `${record.domain ? `${record.domain}\\` : ''}${record.account ?? '記録なし'}`;
+  return `${account} ／ ${record.host ?? '記録なし'}${record.identity_source === 'env' ? '（指定した値）' : ''}`;
+}
+const MACHINE_NOTE = 'アカウント名と PC 名は、その操作をした PC から自動で取った記録です。本人確認ではありません。';
+
+/** 自由に足す段で挙がったが、載せなかったもの。対象外（IT ではない）と、まだ聞いていないもの。題名だけ。 */
+function openItemsHtml({ manual }) {
+  const open = manual.open_items;
+  if (!open) return '';
+  const list = (label, names, note) => (names.length ? [`<p class="label intro-label">${label}</p>`, `<ul class="open-items" role="list">${names.map((name) => `<li>${esc(name)}</li>`).join('')}</ul>`, `<p class="note">${note}</p>`] : []);
+  return [
+    ...list('この説明書の対象外として挙がったもの', open.out_of_scope, 'IT ではない業務なので、この説明書には載せていません。引き継ぎ先は社長に確かめてください。'),
+    ...list('挙がったが、まだ聞いていないもの', open.not_asked, '前任者に聞けていません。分かったら、更新で足せます。'),
+  ].join('\n');
+}
+
+/** 今の担当。担当の引き継ぎの記録があるときだけ。 */
+const ownerHtml = ({ manual }) => {
+  const owner = currentOwner(manual);
+  return owner ? `<p class="intro-text current-owner">今の担当：${esc(owner.name)} さん（${esc(formatDate(owner.since))}から）</p>` : '';
+};
+
+/** 作成の記録の 1 行。はじめにの、前任者の確認の文の下に出す。 */
+function creationRecordHtml({ manual: { review } }) {
+  if (!review || (!review.account && !review.host)) return '';
+  return `<p class="note creation-record">作成の記録：${esc(formatDate(review.confirmed_on))} ${esc(review.reviewer)} 確認（${esc(machineText(review))}）。${MACHINE_NOTE}</p>`;
+}
+
+/** 更新の記録の表。担当が代わっても、誰が何を確認したかを追えるようにする。新しい順。一番古い行は作成の記録。 */
 function updateLogHtml({ manual, text }) {
   if (!manual.updates?.length) return '';
   const nameOf = (target) => {
@@ -400,12 +433,21 @@ function updateLogHtml({ manual, text }) {
     const device = manual.devices.find((candidate) => candidate.id === target);
     return device ? text(device.name) : esc(target);
   };
-  const rows = [...manual.updates].reverse().map(({ target, by, date, kind, summary }) => `<tr><td class="update-date">${esc(formatDate(date))}</td><td class="update-kind">${esc(UPDATE_KIND_LABELS[kind] ?? '')}</td><td>${esc(by)}</td><td>${nameOf(target)}</td><td>${esc(summary ?? '').replace(PHONE_IN_TEXT, telHtml)}</td></tr>`);
+  const rows = [...manual.updates].reverse().map((record) => {
+    const { target, by, date, kind, summary } = record;
+    const what = kind === 'handover' ? `${record.from} さん → ${record.to} さん` : summary ?? '';
+    return `<tr><td class="update-date">${esc(formatDate(date))}</td><td class="update-kind">${esc(UPDATE_KIND_LABELS[kind] ?? '')}</td><td>${esc(by)}</td><td>${kind === 'handover' ? '' : nameOf(target)}</td><td>${esc(what).replace(PHONE_IN_TEXT, telHtml)}</td><td class="update-machine">${esc(machineText(record))}</td></tr>`;
+  });
+  const { review } = manual;
+  const creation = review ? [`<tr><td class="update-date">${esc(formatDate(review.confirmed_on))}</td><td class="update-kind">作成</td><td>${esc(review.reviewer)}</td><td>全ページ</td><td>前任者が全ページを確認</td><td class="update-machine">${esc(machineText(review))}</td></tr>`] : [];
+  const digest = recordsOf(manual).some((record) => 'content' in record) ? `<p class="note record-digest">最新の記録の要約値：${esc(lastRecordDigest(manual))}（印刷した紙と照らせます。書き換えに気づくためのもので、防ぐものではありません）</p>` : '';
   return [
     '<p class="label intro-label">更新の記録</p>',
-    '<table class="update-log"><thead><tr><th>日付</th><th>種類</th><th>確認した人</th><th>ページ</th><th>内容</th></tr></thead>',
-    `<tbody>${rows.join('')}</tbody></table>`,
-  ].join('\n');
+    '<table class="update-log"><thead><tr><th>日付</th><th>種類</th><th>確認した人</th><th>ページ</th><th>内容</th><th>記録した PC</th></tr></thead>',
+    `<tbody>${[...rows, ...creation].join('')}</tbody></table>`,
+    `<p class="note">${MACHINE_NOTE}</p>`,
+    digest,
+  ].filter(Boolean).join('\n');
 }
 
 /** 判定の凡例。はじめにと、PC の開いた直後の中央で同じものを出す。 */
@@ -447,7 +489,10 @@ function introPanel(ctx) {
     `<a class="btn btn-primary tap" href="#tab-help">困ったときは</a>`,
     '<p class="intro-more"><a class="tap text-link" href="#tab-contacts">連絡先を見る</a></p>',
     ...introCansHtml(ctx),
+    creationRecordHtml(ctx),
+    ownerHtml(ctx),
     ...afterLeavingHtml(ctx),
+    openItemsHtml(ctx),
     '<p class="label intro-label">判定の見かた</p>',
     legendHtml(),
     updateLogHtml(ctx),
@@ -549,7 +594,7 @@ const termAnchor = (ctx, page, term) => `g-${page.id}-${ctx.manual.glossary.inde
 /** ① まずこれだけ。手順ページの最初に見る場所で、ページ内で唯一の暖色の枠と影を持つ。 */
 function firstHtml(ctx, page, number) {
   const many = page.first_steps.length > 1;
-  const figures = firstStepFigures(page, ctx.manual);
+  const figures = pageFigures(page, ctx.manual);
   const scope = pageScopeNotes(page, ctx.manual);
   return [
     '<section class="first">',
@@ -598,6 +643,7 @@ export const scopeNoteHtml = (notes, id) => (notes.has(id) ? `<p class="step-not
 
 function stepsHtml(ctx, page, stepTerms, heading) {
   const scope = pageScopeNotes(page, ctx.manual);
+  const figures = pageFigures(page, ctx.manual);
   const items = page.steps.map((id, index) => {
     const [body, note] = stepParts(ctx.raw(id));
     // 短い手順だけ文節で折り返す。長い文を文節で切ると、かえって行の長さがばらつくため
@@ -614,6 +660,7 @@ function stepsHtml(ctx, page, stepTerms, heading) {
       `<span class="step-box">${icon('check')}</span>`,
       '</label>',
       noteHtml,
+      figures.get(id) ?? '',
       scopeNoteHtml(scope, id),
       terms,
       '</li>',
@@ -819,7 +866,8 @@ function monthsAway(routine, asOfMonth) {
 
 function routineHtml(ctx, routine) {
   const scope = routineScopeNotes(routine, ctx.manual);
-  const steps = routine.steps.map((id, index) => `<li><span class="step-n">${index + 1}</span><span>${ctx.text(id)}${scope.has(id) ? `<br>${esc(scope.get(id))}` : ''}</span></li>`);
+  const figures = routineFigures(routine, ctx.manual);
+  const steps = routine.steps.map((id, index) => `<li><span class="step-n">${index + 1}</span><span>${ctx.text(id)}${scope.has(id) ? `<br>${esc(scope.get(id))}` : ''}${figures.get(id) ?? ''}</span></li>`);
   const details = steps.length
     ? `<details class="term routine-steps" open><summary class="tap"><span>手順を見る</span>${PLUS_MINUS}</summary><ol class="routine-list" role="list">${steps.join('')}</ol></details>`
     : '';

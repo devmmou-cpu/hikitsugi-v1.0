@@ -13,6 +13,7 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { checkSecretFiles } from '../scripts/check-secrets.mjs';
 import { IDENTITY_ENV } from '../plugin/lib/identity.mjs';
+import { takeoverHits } from '../plugin/lib/takeover.mjs';
 import { manualProblems, pageStatementIds } from '../plugin/lib/page-check.mjs';
 import { PHONE_DIR } from '../plugin/renderer/phone.mjs';
 import { nextStep, run } from '../plugin/scripts/hikitsugi.mjs';
@@ -31,7 +32,14 @@ export const SCRIPT = {
   contact: '分電盤やブレーカーの工事はエゾクロテン電設に頼みます。電話番号は 03-0000-0131 で、受付は平日の9時から17時です。契約書の控えの場所は分かりません。',
   symptom: '分電盤のブレーカーが落ちて事務所の電気が止まったときは、エゾクロテン電設に電話します。',
   device: '停電用の予備の電池を事務所の棚の下の段に置きました。停電のときに共有の機器を数分だけ動かします。止まると、停電のときに共有の機器がすぐ止まります。パスワードはありません。電池の箱は開けないでください。',
+  // 11/15：決まった作業を足す、社内の相談先を足す、担当を引き継ぐ（佐藤さん → 社長）
+  routine: '毎月15日に、NAS の管理画面でディスクの状態を見ています。「正常」と出ていれば終わりです。総務の担当がしています。',
+  internal: '社内の IT の相談は、総務の佐藤に聞きます。席で声をかけてください。電話番号はありません。',
+  takeover: '佐藤は担当を外れます。社内の IT の相談は、社長に聞きます。社長の席で声をかけてください。',
 };
+const ROUTINE_TITLE = 'NAS';
+const LEAVING = '佐藤';
+const NEXT_OWNER = '社長';
 const EZO = { name: 'エゾクロテン電設', phone: '03-0000-0131' };
 const FREE_DIAL = '0120-000-000';
 
@@ -141,7 +149,44 @@ const UPDATES = [
   { name: 'contact', label: '連絡先を足す（エゾクロテン電設）', start: (tool) => tool('update-add-contact', ['vendor'], SCRIPT.contact) },
   { name: 'symptom', label: '症状を足す（分電盤）', start: (tool) => tool('update-add', [], SCRIPT.symptom) },
   { name: 'device', label: '機器を足す（予備の電池）', start: (tool) => tool('update-add-device', [], SCRIPT.device) },
+  { name: 'routine', label: '決まった作業を足す（毎月、NAS のディスクの状態）', start: (tool) => tool('update-add-routine', ['monthly'], SCRIPT.routine) },
+  { name: 'internal', label: '社内の相談先を足す（佐藤さん）', start: (tool) => tool('update-add-contact', ['internal'], SCRIPT.internal) },
+  { name: 'takeover', label: '担当を引き継ぐ（佐藤さん → 社長）', takeover: true },
 ];
+
+/** 文章の ID から、それを持つ更新の対象（ページ、連絡先、機器、決まった作業）を返す。 */
+function ownerOf(manual, id) {
+  if (manual.contacts.some((contact) => contact.id === id)) return id;
+  const page = manual.symptom_pages.find((candidate) => Object.values(candidate).flat().includes(id));
+  if (page) return page.id;
+  const routine = manual.routines.find((candidate) => [candidate.title, ...candidate.steps].includes(id));
+  if (routine) return routine.id;
+  const device = manual.devices.find((candidate) => Object.values(candidate).includes(id));
+  return device?.id ?? null;
+}
+
+/** 担当を引き継ぐ。直すまで完了しないものは、ふつうの更新（update-fix）で 1 件ずつ直す。ほかの文は「このままでよい」とする（自動承認）。 */
+async function runTakeover({ live, api, record, overBudget, reviews }) {
+  console.log(live.tool('takeover-start', [LEAVING, '→', NEXT_OWNER]));
+  const review = ({ page, tool }) => {
+    const shown = tool('review-show', [page]);
+    tool('review-ok', [page]);
+    reviews.push({ page, decision: APPROVED, shown, at: new Date().toISOString() });
+  };
+  for (let guard = 0; guard < 5; guard += 1) {
+    const { blocking } = takeoverHits(live.read('manual-final.json'), LEAVING);
+    if (!blocking.length) break;
+    const target = ownerOf(live.read('manual-final.json'), blocking[0].id);
+    if (!target) throw new Error(`直す対象が分かりません：${blocking[0].id}`);
+    console.log(live.tool('update-fix', [target], SCRIPT.takeover));
+    const status = await driveUpdate({ work: live.work, api, record, overBudget, review });
+    if (status !== 'update') return { status, target };
+  }
+  for (const item of takeoverHits(live.read('manual-final.json'), LEAVING).other) live.tool('takeover-ok', [item.id]);
+  console.log(live.tool('takeover-finish'));
+  live.tool('render');
+  return { status: 'update', target: 'handover' };
+}
 
 const filesIn = (dir) => (existsSync(dir) ? readdirSync(dir).map((name) => join(dir, name)).filter((path) => statSync(path).isFile()) : []);
 
@@ -166,6 +211,17 @@ export function judge({ base, work, steps, before, identity }) {
   row('場面', '1. エゾクロテン電設を連絡先として足し、続けて足した分電盤の症状ページの ③ の連絡先になる',
     contact && page && page.fallback?.contact === contact.id,
     `連絡先 ${contact ? `${contact.id}（${contact.phone}）` : 'なし'}、ページ ${page ? `${page.id}「${text.get(page.title)}」の ③ は ${page.fallback?.contact}` : 'なし'}`);
+  // 決まった作業を足す（11/15）
+  const routineId = steps.find((step) => step.name === 'routine')?.target;
+  const routine = manual.routines.find((r) => r.id === routineId);
+  const plain = html.replace(/<[^>]+>/g, '');
+  row('場面', '6. 決まった作業を 1 件足し、「決まった作業」に出る。ほかの作業は変わらない', routine && routine.frequency === 'monthly' && plain.includes(text.get(routine.title)) && JSON.stringify(manual.routines.filter((r) => r.id !== routineId)) === JSON.stringify(readJson(join(SAMPLE, 'manual.json')).manual.routines.filter((r) => r.id !== routineId)),
+    routine ? `${routine.id}「${text.get(routine.title)}」（${routine.frequency}）` : '決まった作業が足されていません');
+  // 担当を引き継ぐ（11/15）
+  const handover = (manual.updates ?? []).filter((u) => u.kind === 'handover').at(-1);
+  const remaining = takeoverHits(manual, LEAVING);
+  row('場面', '7. 担当を引き継ぐ（佐藤さん → 社長）：去る人が連絡先・相談先・保管場所に残らず、記録が付き、「今の担当」が出る', handover && handover.from === LEAVING && handover.to === NEXT_OWNER && !remaining.blocking.length && plain.includes(`今の担当：${NEXT_OWNER} さん`),
+    `引き継ぎの記録 ${handover ? `${handover.from} → ${handover.to}` : 'なし'}、去る人が残った件数 ${remaining.blocking.length}（${remaining.blocking.map((hit) => hit.id).join('、') || 'なし'}）`);
   // 合格の条件 2：機器を足し、会社のIT に載る
   const companyTab = html.slice(html.indexOf('<section id="tab-company"'));
   row('場面', '2. 機器を 1 台足し、「会社のIT」に載る', device && html.includes('<section id="tab-company"') && companyTab.includes(text.get(device.name)),
@@ -205,11 +261,13 @@ export function judge({ base, work, steps, before, identity }) {
   const left = manualProblems(manual, readJson(join(work, 'state.json')).retiree);
   row('場面', '5. 既存の検査が足した内容にも効く（通しの出力の全体の検査。止まる側は「追加の検査」の行）', allDone && !left.length, left.length ? left.slice(0, 5).join(' / ') : '全体の検査で問題なし。各更新で check-writer の検査を通った');
 
-  // アカウント名と PC 名を画面に出さない
-  const fictionalShown = [identity.account, identity.host].filter((value) => html.includes(value) || phone.includes(value));
+  // アカウント名と PC 名：PC 用（印刷を含む）の「更新の記録」に架空の値が出て、スマホ用には出ない。実際の値はどこにも出ない（11/15）
+  const onPc = [identity.account, identity.host].every((value) => html.includes(value));
+  const onPhone = [identity.account, identity.host].filter((value) => phone.includes(value));
   const realShown = checkSecretFiles([join(base, 'manual.html'), join(base, PHONE_DIR)]).filter((problem) => /アカウント名|PC 名/.test(problem));
-  row('画面', 'PC 用（印刷を含む）とスマホ用の画面に、アカウント名と PC 名が出ていない', !fictionalShown.length && !realShown.length,
-    `架空の値が出た箇所 ${fictionalShown.length} 件、この PC の実際の値が出た箇所 ${realShown.length} 件（スマホ用 ${phoneFiles.length} ファイルを見た）`);
+  const proofWord = /証明/.test(html) || /証明/.test(phone);
+  row('画面', 'アカウント名と PC 名が PC 用と印刷に出て、スマホ用に出ない。実際の値はどこにも出ない。「証明」の語がない', onPc && !onPhone.length && !realShown.length && !proofWord,
+    `PC 用に架空の値 ${onPc ? 'あり' : 'なし'}、スマホ用に出た架空の値 ${onPhone.length} 件、この PC の実際の値が出た箇所 ${realShown.length} 件、「証明」${proofWord ? 'あり' : 'なし'}（スマホ用 ${phoneFiles.length} ファイルを見た）`);
   return rows;
 }
 
@@ -278,6 +336,9 @@ async function main() {
     let error;
     let target;
     try {
+      if (item.takeover) {
+        ({ status, target } = await runTakeover({ live, api, record, overBudget: () => spent > limit, reviews }));
+      } else {
       console.log(item.start(live.tool));
       target = live.read('state.json').update.target;
       status = await driveUpdate({
@@ -291,6 +352,7 @@ async function main() {
           reviews.push({ page, decision: APPROVED, shown, at: new Date().toISOString() });
         },
       });
+      }
     } catch (failure) {
       status = 'error';
       error = failure.message;

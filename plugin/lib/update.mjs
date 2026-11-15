@@ -3,6 +3,8 @@
 
 import { pageStatementIds } from './page-check.mjs';
 import { hasCredential } from './transcript.mjs';
+import { chainFields } from './records.mjs';
+import { identityFields } from './identity.mjs';
 
 export const BUNDLE_NAME = 'manual.json';
 export const CREDENTIAL_MEMO = '（パスワードらしい値があるので、この文は残していません）';
@@ -39,6 +41,7 @@ export function targetKind(manual, id) {
   if (manual.symptom_pages.some((page) => page.id === id)) return 'page';
   if (manual.contacts.some((contact) => contact.id === id)) return 'contact';
   if (manual.devices.some((device) => device.id === id)) return 'device';
+  if ((manual.routines ?? []).some((routine) => routine.id === id)) return 'routine';
   return null;
 }
 
@@ -70,7 +73,7 @@ function pagesWithContact(manual, id) {
 const SUMMARY_MAX = 60;
 
 /** 更新の記録の種類の名前。連絡先と機器は「変更」「追加」でそろえる。 */
-export const UPDATE_KIND_LABELS = { contact: '連絡先の変更', add_contact: '連絡先の追加', device: '機器の変更', add_device: '機器の追加', page: '手順の修正', add: '症状の追加', memo: 'メモの取り込み' };
+export const UPDATE_KIND_LABELS = { contact: '連絡先の変更', add_contact: '連絡先の追加', device: '機器の変更', add_device: '機器の追加', page: '手順の修正', add: '症状の追加', memo: 'メモの取り込み', routine: '決まった作業の変更', add_routine: '決まった作業の追加', handover: '担当の引き継ぎ' };
 
 /** 足す連絡先の ID。業者は VEN-、社内の相談先は INH- の続きの番号にする。 */
 export function nextContactId(manual, type) {
@@ -82,6 +85,37 @@ export function nextContactId(manual, type) {
 }
 
 /** 足す機器の ID。今の D1、D2… の続き。ほかの形の ID とも重ならないようにする。 */
+/** 足す決まった作業の ID。今の R の続き（R-01 の形の会社もあるので、数字だけを見る）。 */
+export function nextRoutineId(manual) {
+  const used = new Set(manual.routines.map((routine) => routine.id));
+  let number = Math.max(0, ...manual.routines.map((routine) => Number(routine.id.match(/(\d+)$/)?.[1] ?? 0))) + 1;
+  while (used.has(`R${number}`)) number += 1;
+  return `R${number}`;
+}
+
+/**
+ * 決まった作業を足す・直す更新の、共通部分の出力を確かめる。足すときは 1 件だけ足し、ID と間隔は決めたとおり。
+ * どちらも、対象でない作業は前の版のまま（ID、間隔、題名と手順の文章の ID）。
+ */
+export function routineUpdateProblems(previous, output, update) {
+  const problems = [];
+  const before = new Map(previous.routines.map((routine) => [routine.id, routine]));
+  const after = new Map(output.routines.map((routine) => [routine.id, routine]));
+  const target = update.add_routine?.id ?? update.target;
+  for (const [id, routine] of before) {
+    if (id === target) continue;
+    if (JSON.stringify(after.get(id)) !== JSON.stringify(routine)) problems.push(`決まった作業 ${id} は変えないでください（今回の対象は ${target} だけです）`);
+  }
+  if (update.add_routine) {
+    const added = after.get(update.add_routine.id);
+    if (!added) problems.push(`足す決まった作業 ${update.add_routine.id} がありません`);
+    else if (added.frequency !== update.add_routine.frequency) problems.push(`${update.add_routine.id} の間隔は ${update.add_routine.frequency} です`);
+    const extra = [...after.keys()].filter((id) => !before.has(id) && id !== update.add_routine.id);
+    if (extra.length) problems.push(`足す決まった作業は 1 件だけです：${extra.join(', ')}`);
+  } else if (!after.has(target)) problems.push(`直す決まった作業 ${target} がありません`);
+  return problems;
+}
+
 export function nextDeviceId(manual) {
   const used = new Set(manual.devices.map((device) => device.id));
   let number = Math.max(0, ...manual.devices.map((device) => Number(device.id.match(/^D(\d+)$/)?.[1] ?? 0))) + 1;
@@ -126,8 +160,7 @@ export function updateSummary(answer) {
 export function withUpdateMark(manual, { target, by, date, summary, kind: updateKind, identity }) {
   const kind = targetKind(manual, target);
   const pages = kind === 'page' ? [target] : kind === 'contact' ? pagesWithContact(manual, target) : [];
-  const machine = identity ? { ...(identity.account ? { account: identity.account } : {}), ...(identity.host ? { host: identity.host } : {}), ...(identity.source ? { identity_source: identity.source } : {}) } : {};
-  const updates = [...(manual.updates ?? []), { target, pages, by, date, ...(updateKind ? { kind: updateKind } : {}), ...(summary ? { summary } : {}), ...machine }];
+  const updates = [...(manual.updates ?? []), { target, pages, by, date, ...(updateKind ? { kind: updateKind } : {}), ...(summary ? { summary } : {}), ...identityFields(identity), ...chainFields(manual) }];
   return {
     ...manual,
     review: { ...manual.review, updated_by: [...new Set(updates.map((update) => update.by))].join('・'), updated_on: date },

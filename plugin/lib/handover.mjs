@@ -2,6 +2,8 @@
 
 import { withoutPcNotes, withoutReplies, withReplies } from './reply.mjs';
 import { loadLibrary, unapprovedParts } from './procedures.mjs';
+import { contentDigest } from './records.mjs';
+import { identityFields } from './identity.mjs';
 
 /** 未承認の部品が使われているときの例外。 */
 export class UnapprovedPartsError extends Error {
@@ -119,4 +121,8 @@ export function mergeVerification(previousVerification, results, manual, scope) 
 }
 
 /** 全ページの確認が済んだ印を付ける。 */
-export const markReviewed = (manual, reviewer, confirmedOn) => ({ ...manual, review: { reviewer, confirmed_on: confirmedOn } });
+/** 作成の記録。identity（アカウント名、ドメイン名、PC 名）は記録で、本人確認ではない。中身の要約値を鎖の始まりにする。 */
+export const markReviewed = (manual, reviewer, confirmedOn, identity = null) => ({
+  ...manual,
+  review: { reviewer, confirmed_on: confirmedOn, ...identityFields(identity), content: contentDigest(manual) },
+});
