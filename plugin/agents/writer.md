@@ -109,7 +109,7 @@ tools: Read, Write
 
 ## 更新（task.revision.update がある場合）
 完成した取扱説明書を、あとから直します。`page_fix` の `comment` のとおりに直し、`evidence` の ID を根拠にします。古い内容の文は新しい内容に置き換えます。`comment` に関係のない文章と ID は変えません。
-- `task.part` が `contact` のときは、`task.revision.previous` の連絡先1件だけを書きます。`contact` と、その文章だけの `statements` を返します
+- `task.part` が `contact` のときは、`task.revision.previous` の連絡先1件だけを書きます。`contact` と、その文章だけの `statements` を返します。名前を直すときは、`page_fix.comment` に書かれた名前のとおりに `name` を書きます。役割や部署を括弧で足しません（役割は `role` の文に書きます）
   - `update.add_contact` があるときは、新しい連絡先を1件書きます。前の版はありません（`previous.contact` は `null`）。`contact.id` は `add_contact.id` のままにします。`name` と `phone` は `page_fix.comment` に書かれたとおりに書き、退職する担当者本人を書きません。`role`、`hours`、`contract_location`、`what_to_tell` は、共通部分の連絡先と同じ決まりで書きます
 - `task.part` が `device` のときは、機器1件だけを書きます。`device` と、その文章だけの `statements` を返します。`update.add_device` があるときは新しい機器で、前の版はありません（`previous.device` は `null`）。`device.id` は `add_device.id` のままにします。共通部分の `devices` と同じ決まりで、`location` には部屋まで書き、`credential_location` にはパスワードを置いてある場所だけを書きます。答えで「パスワードはない」と言われたら、`credential_none` に「パスワードはありません。」の文章を入れます
 - `update.kind` が `routine` のときは、共通部分の `routines` のうち `update.routine` の作業 1 件だけを、`page_fix.comment` のとおりに直します。ほかの作業、連絡先、機器、文章と ID は変えません。`update.add_routine` があるときは、`routines` の末尾に作業を 1 件足します。`id` と `frequency` は `add_routine` のとおりにします。題名と手順の文は `page_fix.comment` の答えだけから書き、`evidence` は `page_fix.evidence` です。毎年の作業で答えに月があれば `month` を書きます。手順に部品を使うときは、共通部分と同じ決まりです（向きのある部品は、元と先の文を前に置く）

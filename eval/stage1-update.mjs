@@ -240,6 +240,8 @@ export function judge({ base, work, steps, before, identity }) {
   }
   const unverified = addedIds.filter((id) => verdicts.get(id) !== 'correct');
   const approvals = steps.flatMap((step) => step.reviews ?? []);
+  // 確認は更新ごとに 1 回。引き継ぎは、去る人が残っていた所を直した数だけ（残っていなければ 0 回）
+  const approvalsPerStep = steps.every((step) => step.name === 'takeover' || (step.reviews ?? []).length === 1);
   const inBundle = contact && bundle.contacts.some((c) => c.id === contact.id) && page && bundle.symptom_pages.some((p) => p.id === page.id) && device && bundle.devices.some((d) => d.id === device.id);
   const pageTitle = page ? text.get(page.title) : null;
   // スマホ用は番号を区切りごとの span に分けて書くので、タグを除いた文字で比べる
@@ -247,14 +249,17 @@ export function judge({ base, work, steps, before, identity }) {
   const phoneShown = contact && phoneText.includes(contact.name) && phoneText.includes(contact.phone.replace(/-/g, '')) && pageTitle && phoneText.includes(pageTitle);
   const pcShown = contact && html.includes(contact.name) && pageTitle && html.includes(pageTitle) && device && html.includes(text.get(device.name));
   row('場面', '3. 足した文が Verifier の照合を通り、更新する人の確認（自動承認）を経て、PC 用・スマホ用・manual.json に出る',
-    allDone && addedIds.length && !unverified.length && approvals.length === UPDATES.length && approvals.every((a) => a.decision === APPROVED) && inBundle && phoneShown && pcShown,
+    allDone && addedIds.length && !unverified.length && approvalsPerStep && approvals.every((a) => a.decision === APPROVED) && inBundle && phoneShown && pcShown,
     [`足した文 ${addedIds.length} 件のうち、照合で「正しい」でないもの ${unverified.length} 件${unverified.length ? `（${unverified.join('、')}）` : ''}`,
       `確認 ${approvals.length} 回（${approvals.map((a) => `${a.page} ${a.decision}`).join('、')}）`,
       `PC 用 ${pcShown ? '出た' : '出ていない'}、スマホ用 ${phoneShown ? '連絡先と症状ページが出た' : '出ていない'}（機器はスマホ用の束にもともと出さない）、manual.json ${inBundle ? '出た' : '出ていない'}`].join('。'));
   // 合格の条件 4：更新の記録
-  const added = manual.updates.slice(-UPDATES.length);
-  const kinds = added.map((u) => u.kind).join(',');
-  const recorded = kinds === 'add_contact,add,add_device' && added.every((u) => u.by === UPDATER && u.account === identity.account && u.host === identity.host && u.identity_source === 'env');
+  // この通しで足した記録：連絡先、症状、機器、決まった作業、社内の相談先の追加、引き継ぎの直し（1 件以上）、引き継ぎ
+  const added = manual.updates.slice(readJson(join(SAMPLE, 'manual.json')).manual.updates?.length ?? 0);
+  const kindList = added.map((u) => u.kind);
+  const kinds = kindList.join(',');
+  const head = ['add_contact', 'add', 'add_device', 'add_routine', 'add_contact'];
+  const recorded = head.every((kind, index) => kindList[index] === kind) && kindList.at(-1) === 'handover' && kindList.slice(head.length, -1).length >= 1 && kindList.slice(head.length, -1).every((kind) => ['contact', 'page', 'routine', 'device'].includes(kind)) && added.every((u) => u.by === UPDATER && u.account === identity.account && u.host === identity.host && u.identity_source === 'env');
   row('場面', '4. 更新の記録に、種類（連絡先の追加、機器の追加）、名乗った名前、アカウント名、PC 名が並ぶ',
     recorded && JSON.stringify(bundle.updates) === JSON.stringify(manual.updates), `記録の種類 ${kinds}、名前 ${[...new Set(added.map((u) => u.by))].join('、')}、架空のアカウント名と PC 名 ${recorded ? 'あり' : '違う'}、manual.json にも同じ記録`);
   // 合格の条件 5：既存の検査が足した内容にも効く。通しの出力の全体の検査と、API を使わない検査（別の行）で見る

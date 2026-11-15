@@ -72,6 +72,17 @@ test('矢印の向きは動詞の一覧で決める。差す・つなぐは機�
   assert.ok(!none.svg.includes(kit.arrows.left) && !none.svg.includes(kit.arrows.right));
 });
 
+test('部品の少ない絵も、幅の基準は部品 3 つ分。大きく引き伸ばさない（11/15）', () => {
+  const width = (svg) => Number(svg.match(/viewBox="0 0 (\d+(?:\.\d+)?) /)[1]);
+  const one = partsFigure({ items: [{ part: 'lamp', label: 'ランプ' }] }, 'ランプが緑になるまで待ってください。').svg;
+  const two = partsFigure({ items: [{ part: 'router', label: 'AP' }, { part: 'power', label: '' }] }, 'AP の電源アダプターを抜いてください。').svg;
+  const three = partsFigure({ items: [{ part: 'pc', label: 'PC' }, { part: 'cable', label: '' }, { part: 'router', label: '' }] }, 'PC とルーターのあいだのケーブルを確かめてください。').svg;
+  assert.equal(width(one), 334);
+  // 矢印のある 2 つは、基準より広くなることがある（狭くはしない）
+  assert.ok(width(two) >= 334);
+  assert.ok(width(three) >= 334);
+});
+
 test('並べ方の検査：部品にない物、文にない物、根拠にない文字、記号、多すぎる部品は通さない', () => {
   const text = '工場の入口に近い柱の上にある AP の、電源アダプターを抜いてください。';
   assert.deepEqual(figureProblems({ step: 'STM-001', items: [{ part: 'router', label: 'AP' }, { part: 'power', label: '電源アダプター' }] }, text), []);

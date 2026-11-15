@@ -173,7 +173,8 @@ export function partsFigure(figure, stepText, kit = loadKit()) {
     if (cell.label) parts.push(`<text x="${x + width / 2}" y="128" ${SMALL}>${esc(cell.label)}</text>`);
     x += width + 8;
   }
-  return { svg: svg(x + 2, 140, `${stepText}の図`, parts.join('')), arrow };
+  // 部品が少ない絵が大きく引き伸ばされないよう、幅の基準は 3 つ分（キーの絵と同じく、文字の大きさをそろえる）
+  return { svg: svg(Math.max(x + 2, 334), 140, `${stepText}の図`, parts.join('')), arrow };
 }
 
 /** 部品を並べる絵の候補の手順。部品でない文で、物の部品の語があるもの。 */

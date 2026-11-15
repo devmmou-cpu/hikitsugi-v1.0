@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compareAndReport } from './compare-shots.mjs';
+import { loadWatcher } from './load-watcher.mjs';
 import { checkSecretFiles } from './check-secrets.mjs';
 
 // 撮影は更新を実行しないが、プラグインを呼ぶときに実際の名前を残さないよう、架空のアカウント名と PC 名を渡しておく
@@ -250,13 +251,16 @@ async function shootBundle(input, output, chromePath) {
     await page('Network.enable');
     await page('Network.setBlockedURLs', { urls: ['http://*', 'https://*'] });
     await page('Emulation.setScriptExecutionDisabled', { value: true });
+    const loads = loadWatcher(browser, { timeoutMs: CALL_TIMEOUT_MS, error: (message) => new Usage(message) });
     const evaluate = async (expression) => (await page('Runtime.evaluate', { expression, returnByValue: true })).result.value;
     const settle = () => new Promise((done) => setTimeout(done, 200));
     for (const name of names) {
       const path = join(input, name);
       for (const problem of phoneFileProblems(readFileSync(path, 'utf8'))) problems.push(`${name}：${problem}`);
       const number = name.slice(0, 2);
+      const since = loads.now();
       await page('Page.navigate', { url: pathToFileURL(path).href });
+      await loads.after(since);
       await settle();
       // 小さい iPhone の幅でも、はみ出さないこと
       await page('Emulation.setDeviceMetricsOverride', { width: 320, height: 640, deviceScaleFactor: 2, mobile: true });
@@ -363,8 +367,19 @@ async function main([inputArg, outputArg]) {
 
     const evaluate = async (expression) => (await page('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture: true })).result.value;
     const settle = () => new Promise((done) => setTimeout(done, 250));
+    const loads = loadWatcher(browser, { timeoutMs: CALL_TIMEOUT_MS, error: (message) => new Usage(message) });
     const go = async (hash) => {
-      await page('Page.navigate', { url: `${url}${hash}` });
+      const since = loads.now();
+      const { loaderId } = await page('Page.navigate', { url: `${url}${hash}` });
+      // ハッシュだけの移動は、同じ文書のなかの移動で、読み込みが起きない（loaderId がない）
+      if (loaderId) await loads.after(since);
+      await settle();
+      await settle();
+    };
+    const reload = async () => {
+      const since = loads.now();
+      await evaluate(`location.reload()`);
+      await loads.after(since);
       await settle();
       await settle();
     };
@@ -576,9 +591,7 @@ async function main([inputArg, outputArg]) {
         if (!written.grew) problems.push('メモ：書いても欄が伸びません');
         if (!written.date.startsWith('最後に書いた日：')) problems.push('メモ：最後に書いた日が出ません');
         if (!written.stored?.includes('2行目')) problems.push('メモ：入力しても保存されません');
-        await evaluate(`location.reload()`);
-        await settle();
-        await settle();
+        await reload();
         const kept = JSON.parse(await evaluate(`JSON.stringify({ value: document.querySelector('[data-memo="${id}"] .memo-input').value, date: document.querySelector('[data-memo="${id}"] .memo-date').textContent })`));
         if (kept.value !== MEMO || !kept.date) problems.push('メモ：開き直すと残っていません');
         await evaluate(`document.querySelector('[data-memo="${id}"]').scrollIntoView({ block: 'center' })`);
@@ -609,9 +622,7 @@ async function main([inputArg, outputArg]) {
         await page('Emulation.setEmulatedMedia', { media: '', features: [{ name: 'prefers-color-scheme', value: 'light' }] });
         // ほかの撮影に残さない
         await evaluate(`localStorage.removeItem('hikitsugi:' + document.documentElement.dataset.company + ':${id}')`);
-        await evaluate(`location.reload()`);
-        await settle();
-        await settle();
+        await reload();
         report.memo = { cards: before.cards, devices: before.devices };
       }
 

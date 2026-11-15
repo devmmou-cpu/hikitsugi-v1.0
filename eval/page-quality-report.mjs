@@ -12,6 +12,7 @@ import { evidenceReader } from '../plugin/lib/procedures.mjs';
 import { missingNote, pageChecks, unsupportedWaits, PAGE_GAP } from '../plugin/lib/page-quality.mjs';
 import { AFTER_LEAVING_GAP } from '../plugin/lib/after-leaving.mjs';
 import { COMMON_GAP } from '../plugin/lib/common-symptoms.mjs';
+import { OPEN_GAP } from '../plugin/lib/open-items.mjs';
 import { loadInput } from './lib/load-set.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -34,14 +35,16 @@ export function measure(dir) {
   const saidNone = pages.filter(({ checks }) => !checks.missing.length && checks.said_none.length);
   const noted = pages.filter(({ page }) => missingNote(page, manual));
   const entries = transcript.entries;
-  // 20 問の本体。定番の症状、手順の抜け、退職後、前任者の確認の直し（GAP-000）は除く
-  const interview = entries.filter((entry) => ![COMMON_GAP, PAGE_GAP, AFTER_LEAVING_GAP, 'GAP-000'].includes(entry.gap)).length;
+  // 20 問の本体。定番の症状、手順の抜け、退職後、ほかに引き継ぐもの（11/15 から）、前任者の確認の直し（GAP-000）は除く
+  const interview = entries.filter((entry) => ![COMMON_GAP, PAGE_GAP, AFTER_LEAVING_GAP, OPEN_GAP, 'GAP-000'].includes(entry.gap)).length;
   const common = entries.filter((entry) => entry.gap === COMMON_GAP);
   const selection = common.length ? 1 : 0;
   const followups = Math.max(0, common.length - selection);
   const afterLeaving = entries.filter((entry) => entry.gap === AFTER_LEAVING_GAP).length;
   const gapQuestions = entries.filter((entry) => entry.gap === PAGE_GAP).length;
-  const minutes = interview * MINUTES.free + selection * MINUTES.select + followups * MINUTES.free + afterLeaving * MINUTES.choice + gapQuestions * MINUTES.free;
+  // ほかに引き継ぐものの問い。種類の選択も、書く問いと同じ時間で多めに見積もる
+  const openQuestions = entries.filter((entry) => entry.gap === OPEN_GAP).length;
+  const minutes = interview * MINUTES.free + selection * MINUTES.select + followups * MINUTES.free + afterLeaving * MINUTES.choice + gapQuestions * MINUTES.free + openQuestions * MINUTES.free;
   return {
     company,
     physical_pages: pages.length,
@@ -52,7 +55,7 @@ export function measure(dir) {
     pages: pages.map(({ page, checks }) => ({ id: page.id, title: byId.get(page.title), needs: checks.needs, missing: checks.missing, said_none: checks.said_none })),
     unsupported_waits: unsupportedWaits(manual, evidenceReader({ survey, transcript })),
     after_leaving: manual.after_leaving ? byId.get(manual.after_leaving) : null,
-    questions: { interview, selection, followups, after_leaving: afterLeaving, page_gaps: gapQuestions, total: interview + selection + followups + afterLeaving + gapQuestions },
+    questions: { interview, selection, followups, after_leaving: afterLeaving, page_gaps: gapQuestions, open_items: openQuestions, total: interview + selection + followups + afterLeaving + gapQuestions + openQuestions },
     minutes_estimate: Math.round(minutes * 10) / 10,
   };
 }
