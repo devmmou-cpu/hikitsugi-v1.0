@@ -5,7 +5,7 @@
 大会に提出した版は `submission-20261108` のタグ。版の番号は付けず「大会に提出した版」と呼ぶ。提出したリポジトリ（hikitsugi）は remote の `submitted` で、変更しない。開発は remote の `origin` で続ける。
 
 公開する版は v1.0（完成版）。リポジトリ名は `hikitsugi-v1.0`、公開のときのタグは `v1.0`（11/15 の本人の決定）。
-- GitHub での名前の変更（hikitsugi-next → hikitsugi-v1.0）は本人が行う。本人が「名前を変えた」と伝えたら、`git remote set-url origin https://github.com/devmmou-cpu/hikitsugi-v1.0.git` を実行する。それまで実行しない
+- GitHub での名前の変更（hikitsugi-next → hikitsugi-v1.0）は、11/15 に本人が行った。同じ日に origin の向き先を `https://github.com/devmmou-cpu/hikitsugi-v1.0.git` に直した
 - 公開後に不具合を直したときは、リポジトリ名を変えず、README の「大会に提出した版から変えたこと」の「公開後の変更」に日付つきで書く
 
 ## コマンド

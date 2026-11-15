@@ -38,7 +38,7 @@ v1.0 の順番 5「公開の準備」の 5 と 6。Claude が行い、本人の�
    mkdir <作業用>/handover && cd <作業用>/handover
    claude -p "/hikitsugi:start"
    ```
-2. **GitHub の Private のまま（本人の PC）：** 1 の 2 行目の `<リポジトリのフォルダ>` を `devmmou-cpu/hikitsugi-v1.0`（改名の前は `devmmou-cpu/hikitsugi-next`）にする。手元の git の認証で取得できるかは、まだ確かめていない
+2. **GitHub の Private のまま（本人の PC）：** 1 の 2 行目の `<リポジトリのフォルダ>` を `devmmou-cpu/hikitsugi-v1.0` にする。手元の git の認証で取得できるかは、まだ確かめていない
 3. **公開したあと：** GitHub にログインしていない環境（別の設定フォルダと、認証のない git）で 1 と同じことをし、最初の質問が出るまでを確かめる
 
 ## 2. 秘密情報の点検（すべての履歴）
@@ -78,7 +78,7 @@ holdout の 2 社のダミーは、開かない約束なので、この走査で
 | 作業フォルダ 6 つ（`hikitsugi`、`hikitsugi-live`、`hikitsugi-r1`、`hikitsugi-review`、`hikitsugi-survey`、`hikitsugi-visual`） | そのまま | 消さない。公開に関係しない |
 | `hikitsugi-r1` の未登録ファイル 2 つ（`docs/design/landing-spec.md`、`docs/design/plain-words.md`） | 未登録のまま | 触らない。中身は、コミット `c919e9e`（11/3）で足した版と同じで、履歴に残っている |
 | タグ（`stage1`、`stage2`、`submission-20261108`、`night-base/*` 5 つ、`day-base/*` 1 つ） | 手元 | 公開するリポジトリには `stage*` と `submission-20261108` と v1.0 のタグだけを送り、`night-base/*` と `day-base/*` は送らない |
-| origin（今の名前は hikitsugi-next。本人が hikitsugi-v1.0 に変える）の `post/stage1-update`、`post/v1-final` | これから送る | origin をそのまま公開するなら見える。`main` に入ったあとで消すかは本人の判断（消すのは本人の操作） |
+| origin（hikitsugi-v1.0。11/15 に hikitsugi-next から改名）の `post/stage1-update`、`post/v1-final` | これから送る | origin をそのまま公開するなら見える。`main` に入ったあとで消すかは本人の判断（消すのは本人の操作） |
 | `submitted`（提出したリポジトリ） | 変えない | 変えない。ABOUT からの誘導は順番 7 |
 
 ## 6. サンプルを置く場所の案（架空のサンプルだけ。本人の了承 11/15）
