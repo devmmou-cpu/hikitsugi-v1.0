@@ -106,6 +106,27 @@ export function holdLabel(text) {
 /** ランプの状態は、手順の文の語で決める。 */
 const lampState = (text) => (/点滅/.test(text) ? 'blink' : /消え|消灯/.test(text) ? 'off' : 'on');
 
+// 矢印の絵の決まり（11/15、本人の決定）：矢印の絵は、機器と、動かす物の両方が手順の文にあるときだけ付ける。
+// 片方しかない文（例：「電源アダプターを差してください。」）は、差す先を推測しないため絵にしない。
+// 部品の一覧（figure-kit.json、承認済み）は変えず、分け方をここに置く
+export const ARROW_DEVICES = ['pc', 'router', 'printer', 'box'];
+export const ARROW_THINGS = ['cable', 'power'];
+const mentionsPart = (text, part) => part.words.some((word) => text.includes(compact(word)));
+/** 矢印の動詞がある文で、機器と動かす物の語が両方あるか。矢印の動詞がない文は true。 */
+export function arrowSidesInText(stepText, kit = loadKit()) {
+  if (!arrowOf(stepText, kit)) return true;
+  const text = compact(stepText);
+  const has = (ids) => ids.some((id) => kit.parts[id] && mentionsPart(text, kit.parts[id]));
+  return has(ARROW_DEVICES) && has(ARROW_THINGS);
+}
+/** 矢印の絵の並べ方の問題。機器と動かす物の両方の部品が並んでいなければ、絵にしない。 */
+export function arrowSideProblems(figure, stepText, kit = loadKit()) {
+  if (!arrowOf(stepText, kit)) return [];
+  const parts = new Set((figure.items ?? []).map((item) => item.part));
+  if (ARROW_DEVICES.some((id) => parts.has(id)) && ARROW_THINGS.some((id) => parts.has(id))) return [];
+  return [`${figure.step}：矢印の絵には、機器と、差す・抜く物の両方が要ります（差す先を推測しません）`];
+}
+
 const UNSAFE = /[<>&"'`]/;
 export const OBJECT_LIMIT = 3;
 export const LABEL_LIMIT = 12;
@@ -139,6 +160,7 @@ export function figureProblems(figure, stepText, evidenceTexts = [], kit = loadK
       if (seconds && !text.includes(`${seconds[1]}秒`)) problems.push(`${figure.step}：絵の「${seconds[1]}秒」が手順の文にありません`);
     }
   }
+  if (items.length) problems.push(...arrowSideProblems(figure, stepText, kit));
   return problems;
 }
 
@@ -177,11 +199,11 @@ export function partsFigure(figure, stepText, kit = loadKit()) {
   return { svg: svg(Math.max(x + 2, 334), 140, `${stepText}の図`, parts.join('')), arrow };
 }
 
-/** 部品を並べる絵の候補の手順。部品でない文で、物の部品の語があるもの。 */
+/** 部品を並べる絵の候補の手順。部品でない文で、物の部品の語があるもの。矢印の動詞がある文は、機器と動かす物の語が両方あるものだけ。 */
 export function figureCandidate(statement, kit = loadKit()) {
   if (!statement || statement.library) return false;
   const text = compact(statement.text);
-  return Object.values(kit.parts).some((part) => part.words.some((word) => text.includes(compact(word))));
+  return Object.values(kit.parts).some((part) => mentionsPart(text, part)) && arrowSidesInText(statement.text, kit);
 }
 
 /**
@@ -203,7 +225,8 @@ export function stepFigures(stepIds, manual, { kit = loadKit(), skip = new Set()
     }
     const figure = planned.get(id);
     // 並べ方を決めたときと文が変わっていれば（更新で直した手順）、古い並べ方は使わない
-    if (figure && figure.text === statement.text) found.set(id, partsFigure(figure, statement.text, kit).svg);
+    // 矢印の絵の決まりは、決まりの前に記録した並べ方にも効かせる
+    if (figure && figure.text === statement.text && !arrowSideProblems(figure, statement.text, kit).length) found.set(id, partsFigure(figure, statement.text, kit).svg);
   }
   return found;
 }

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { arrowOf, figureCandidate, figureProblems, holdLabel, keyFigure, loadKit, partsFigure, readKeys, stepFigures } from '../plugin/lib/figure-build.mjs';
+import { arrowOf, arrowSidesInText, figureCandidate, figureProblems, holdLabel, keyFigure, loadKit, partsFigure, readKeys, stepFigures } from '../plugin/lib/figure-build.mjs';
 
 const kit = loadKit();
 const read = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
@@ -90,7 +90,7 @@ test('並べ方の検査：部品にない物、文にない物、根拠にな�
   assert.match(figureProblems({ step: 'STM-001', items: [{ part: 'printer', label: '' }] }, text).join(), /「複合機・プリンター」の語がありません/);
   assert.match(figureProblems({ step: 'STM-001', items: [{ part: 'router', label: '2 階の AP' }] }, text).join(), /手順の文にも根拠にもありません/);
   // 根拠にある語なら添えられる
-  assert.deepEqual(figureProblems({ step: 'STM-001', items: [{ part: 'router', label: '白い箱' }] }, text, ['AP は白い箱です。']), []);
+  assert.deepEqual(figureProblems({ step: 'STM-001', items: [{ part: 'router', label: '白い箱' }, { part: 'power', label: '' }] }, text, ['AP は白い箱です。']), []);
   assert.match(figureProblems({ step: 'STM-001', items: [{ part: 'router', label: 'AP<b>' }] }, text, ['AP<b>']).join(), /記号/);
   assert.match(figureProblems({ step: 'STM-001', items: Array.from({ length: 4 }, () => ({ part: 'router', label: '' })) }, text).join(), /1〜3 個/);
 });
@@ -99,24 +99,45 @@ test('候補の手順は、部品でない文で、物の部品の語がある�
   assert.equal(figureCandidate({ text: 'NAS の電源ボタンを押してください。', library: null }), true);
   assert.equal(figureCandidate({ text: '社長に連絡してください。', library: null }), false);
   assert.equal(figureCandidate({ text: '画面の右下にある、Wi-Fi のマークを押してください。', library: 'LIB-010' }), false);
+  // 矢印の動詞がある文は、機器と動かす物の語が両方あるときだけ
+  assert.equal(figureCandidate({ text: 'ルーターの電源プラグを差してください。', library: null }), true);
+  assert.equal(figureCandidate({ text: '電源アダプターを差してください。', library: null }), false);
+  assert.equal(figureCandidate({ text: 'ルーターを外してください。', library: null }), false);
+});
+
+test('矢印の絵は、機器と動かす物の両方が手順の文にあるときだけ。片方しかない文は、差す先を推測せず絵にしない（11/15）', () => {
+  assert.equal(arrowSidesInText('ルーターの電源プラグを抜いてください。'), true);
+  assert.equal(arrowSidesInText('PC の裏の LAN ケーブルを差し直してください。'), true);
+  assert.equal(arrowSidesInText('電源アダプターを差してください。'), false);
+  assert.equal(arrowSidesInText('LAN ケーブルを抜いてください。'), false);
+  // 矢印の動詞がない文は、この決まりの対象外
+  assert.equal(arrowSidesInText('ランプが緑になるまで待ってください。'), true);
+  // 文に両方あっても、並べ方に片方しかなければ通さない
+  const text = 'ルーターの電源プラグを抜いてください。';
+  assert.match(figureProblems({ step: 'STM-001', items: [{ part: 'power', label: '' }] }, text).join(), /機器と、差す・抜く物の両方/);
+  assert.deepEqual(figureProblems({ step: 'STM-001', items: [{ part: 'router', label: '' }, { part: 'power', label: '' }] }, text), []);
+  assert.match(figureProblems({ step: 'STM-001', items: [{ part: 'power', label: '' }] }, '電源アダプターを差してください。').join(), /機器と、差す・抜く物の両方/);
 });
 
 test('手順に付ける絵：キーの絵は文から作り、部品の絵は並べ方の記録から作る。外した手順と、文が変わった手順には付けない', () => {
   const manual = {
     statements: [
       { id: 'STM-001', text: 'Ctrl キーを押しながら C のキーを押してください。', library: 'LIB-024' },
-      { id: 'STM-002', text: 'LAN ケーブルを抜いてください。', library: null },
+      { id: 'STM-002', text: 'PC の LAN ケーブルを抜いてください。', library: null },
       { id: 'STM-003', text: 'NAS の電源ボタンを押してください。', library: null },
       { id: 'STM-004', text: 'ルーターの電源プラグを差してください。', library: null },
+      { id: 'STM-005', text: '電源アダプターを差してください。', library: null },
     ],
     figures: [
-      { step: 'STM-002', text: 'LAN ケーブルを抜いてください。', items: [{ part: 'cable', label: '' }] },
+      { step: 'STM-002', text: 'PC の LAN ケーブルを抜いてください。', items: [{ part: 'pc', label: 'PC' }, { part: 'cable', label: '' }] },
       { step: 'STM-003', text: 'NAS の電源ボタンを押してください。', items: [{ part: 'box', label: 'NAS' }, { part: 'power-button', label: '' }] },
       { step: 'STM-004', text: 'ルーターの電源を差してください。', items: [{ part: 'router', label: '' }, { part: 'power', label: '' }] },
+      // 決まりの前に記録した、片方だけの矢印の絵。描くときにも付けない
+      { step: 'STM-005', text: '電源アダプターを差してください。', items: [{ part: 'power', label: '' }] },
     ],
     figure_off: ['STM-003'],
   };
-  const found = stepFigures(['STM-001', 'STM-002', 'STM-003', 'STM-004'], manual);
+  const found = stepFigures(['STM-001', 'STM-002', 'STM-003', 'STM-004', 'STM-005'], manual);
   assert.deepEqual([...found.keys()], ['STM-001', 'STM-002']);
   assert.match(found.get('STM-001'), />Ctrl</);
   assert.equal(stepFigures(['STM-001'], manual, { skip: new Set(['STM-001']) }).size, 0);
