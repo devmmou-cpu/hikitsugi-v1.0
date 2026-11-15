@@ -15,6 +15,20 @@ v1.0 の順番 5「公開の準備」の 5 と 6。Claude が行い、本人の�
 
 普段の設定を変えないよう、設定フォルダは確かめ用に別に作った。
 
+### 入れ方の 3 つの形（11/15 の 2 回目。Claude Code 2.1.325、手元のクローンをマーケットプレイスにし、形ごとに別の設定フォルダ）
+| 形 | 結果 | 公式の説明（code.claude.com/docs/en/plugins/install、cli-reference） |
+|---|---|---|
+| (a) ターミナル：`claude plugin install hikitsugi --marketplace <場所>` | **通った**（マーケットプレイスの追加と入れることが 1 行で済み、`claude plugin list` で有効） | ターミナルの形として載っている。v2.1.292 以上 |
+| (b) ターミナル：`claude plugin marketplace add <場所>` のあと `claude plugin install hikitsugi@hikitsugi` | **通った**（@ のあとの `hikitsugi` は marketplace.json の `name`） | 載っている |
+| (c) Claude Code の中：`/plugin install hikitsugi --marketplace <場所>` | **確かめられなかった**。ヘッドレス（`claude -p`）では「`/plugin isn't available in this environment.`」と返る（費用 $0） | 会話の中の形として載っている（v2.1.275 以上）。パネルが開き、確認と範囲の選択がある |
+
+README には、通った (a) と (b) だけを書いた（前に書いた「2.1.275 以上」は (c) の条件だったので、(a) の 2.1.292 に直した）。
+
+### 公開のあとに本人が確かめる手順（3 行）
+1. ターミナルで `claude plugin install hikitsugi --marketplace devmmou-cpu/hikitsugi-v1.0`（「Successfully installed plugin: hikitsugi@hikitsugi」と出れば通過）
+2. 空のフォルダで `claude` を開き、`/hikitsugi:start` と入力する（会社名と退職する人の名前を聞かれれば合格）
+3. 戻すときは `claude plugin marketplace remove hikitsugi`（入れたプラグインも外れる）
+
 ### 確かめていないこと
 - GitHub からの取得（リポジトリが Private のため。上の確かめは、手元のクローンをマーケットプレイスにした）
 - 対話の画面での `/plugin` の操作と、入れたあとの再起動の要否
@@ -24,11 +38,12 @@ v1.0 の順番 5「公開の準備」の 5 と 6。Claude が行い、本人の�
 | 打つ場所 | 行 |
 |---|---|
 | ターミナル | `claude plugin install hikitsugi --marketplace devmmou-cpu/hikitsugi-v1.0` |
-| ターミナル | `mkdir handover && cd handover` |
+| ターミナル | `mkdir handover` |
+| ターミナル | `cd handover` |
 | ターミナル | `claude` |
 | Claude Code | `/hikitsugi:start` |
 
-合計 4 行（README の「使ってみる」）。Windows なしで試すときは、同梱の架空の調査データを取る 1 行（`curl -LO …/survey.json`）が増えて 5 行。
+合計 5 行（README の「使ってみる」）。11/15 の採点で、`&&` が Windows の PowerShell 5.1 で使えないと指摘されたので、`mkdir` と `cd` を分けた。Windows なしで試すときは、架空の調査データを取る 1 行（`curl -LO …/survey.json`）が増えて 6 行。
 
 ### 公開する前（Private のあいだ）の確かめ方
 1. **手元：** 次の 4 行で、上の表と同じことを確かめられる（`<作業用>` は空のフォルダ）。
@@ -92,16 +107,23 @@ holdout の 2 社のダミーは、開かない約束なので、この走査で
 
 **URL（案 A・B とも）：** 入口 https://devmmou-cpu.github.io/hikitsugi-v1.0/ 、PC 用 …/manual.html 、スマホ用 …/phone/（入口から 1 つずつ開く。Pages はフォルダの一覧を出さないため）。
 
-**案 A の手順（本人が実行。公開と同じときに）：**
-```
-git worktree add --orphan -b gh-pages ../hikitsugi-pages
-cp -R samples/okojo/index.html samples/okojo/manual.html samples/okojo/phone ../hikitsugi-pages/
-touch ../hikitsugi-pages/.nojekyll
-git -C ../hikitsugi-pages add -A
-git -C ../hikitsugi-pages commit -m "サンプル（架空のオコジョ精工）の公開用"
-git push origin gh-pages
-```
-そのあと、GitHub のリポジトリの Settings → Pages で、Source を「Deploy from a branch」、Branch を `gh-pages` の `/ (root)` にする。
+**決定（11/15）：案 A。** Pages を有効にするのは、公開と同じときに本人が行う。それまでは準備だけ。
+
+**本人が実行する順番：**
+1. （いつでもよい。手元だけ）サンプルだけのブランチを作る
+   ```
+   git worktree add --orphan -b gh-pages ../hikitsugi-pages
+   cp -R samples/okojo/index.html samples/okojo/manual.html samples/okojo/phone ../hikitsugi-pages/
+   touch ../hikitsugi-pages/.nojekyll
+   git -C ../hikitsugi-pages add -A
+   git -C ../hikitsugi-pages commit -m "サンプル（架空のオコジョ精工）の公開用"
+   ```
+2. （公開のとき）`git push origin gh-pages`
+3. （公開のとき）GitHub でリポジトリを Public にする
+4. （公開のとき）Settings → Pages で、Source を「Deploy from a branch」、Branch を `gh-pages` の `/ (root)` にして保存する
+5. （公開のあと、数分待って）https://devmmou-cpu.github.io/hikitsugi-v1.0/ を開き、「PC 用の説明書を開く」と、スマホ用の一覧の 1 つが開けることを確かめる
+
+**サンプルを作り直したとき：** 1 の `cp` から `commit` までを、`../hikitsugi-pages` の中身を入れ替えてやり直し、`git push origin gh-pages` を実行する。
 
 **Private のあいだの確かめ方：** 手元で、入口のフォルダを HTTP で配って開く（`python3 -m http.server` を `samples/okojo` で実行し、ブラウザーで `http://127.0.0.1:8000/` を開く）。11/15 に Claude がこの形で確かめ、入口のリンク 16 件（PC 用 1、スマホ用 15）がすべて開けた。Private のリポジトリで Pages を有効にすると（有料の契約が要る）、リポジトリが Private でもサイトは誰でも見られるので、有効にするのは公開と同じときをすすめる。
 
@@ -109,4 +131,5 @@ git push origin gh-pages
 - 公開するリポジトリ名：**決定（11/15）** `hikitsugi-v1.0`。README の入れる手順、サンプルの URL、リンクは新しい名前で書いた
 - サンプルを、リンク 1 つで開ける場所に置くか：**決定（11/15）** 置く。置き方は上の 6 の案 A〜C から選ぶ
 - オコジョソフトのリンク先：**決定（11/15）** https://okojyo-soft.com/ 。感想の受け口：**決定（11/15）** GitHub の Issues（報告は任意）
-- プラグインの版の番号：公開する版を v1.0 と呼ぶ決定に合わせ、`1.0.0` にした。アイコンを用意するか（公式の一覧に出す場合だけ要る）
+- プラグインの版の番号：公開する版を v1.0 と呼ぶ決定に合わせ、`1.0.0` にした
+- アイコン：**決定（11/15）** 用意しない（公式のプラグインの一覧に出す場合だけ要る警告。検査は合格）
